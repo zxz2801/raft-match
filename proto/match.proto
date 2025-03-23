@@ -1,0 +1,142 @@
+syntax = "proto3";
+
+package match;
+
+enum ResultCode {
+    SUCCESS = 0;
+    INVALID_PARAMETER = 1;
+    INTERNAL_ERROR = 2;
+    FAIL = 3;
+}
+
+enum SymbolStatus {
+    ALIVE = 0;
+    PAUSE = 1;
+    STOPED = 2;
+}
+
+enum OrderSide {
+    OrderSide_BUY = 0;
+    OrderSide_SELL = 1;
+}
+
+enum TimeInForce {
+    TimeInForce_GTC = 0;
+    TimeInForce_IOC = 1;
+    TimeInForce_FOK = 2;
+}
+
+enum OrderType {
+    OrderType_LIMIT = 0;
+    OrderType_MARKET = 1;
+    OrderType_LIMIT_MAKER = 2;
+}
+
+message Symbol {
+    uint64 symbol_id = 1;
+    string base = 2;
+    string quote = 3;
+    string min_quantity = 4;
+    string min_amount = 5;
+    int32 price_precision = 6; 
+    int32 quantity_precision = 7;
+    SymbolStatus status = 8;
+}
+
+message Order {
+    uint64 order_id = 1;
+    uint64 account_id = 2;
+    OrderSide order_side = 3;
+    OrderType order_type = 4;
+    TimeInForce time_in_force = 5;
+    uint64 symbol_id = 6;
+    string quantity = 7;
+    string price = 8;
+    string taker_fee = 9;
+    string maker_fee = 10;
+}
+
+message Trade {
+    uint64 trade_id = 1;
+    uint64 ticket_id = 2;
+    uint64 order_id = 3; 
+    uint64 account_id = 4;
+    uint64 symbol_id = 5;
+    uint64 match_time = 6;
+    uint64 match_order_id = 7;
+    uint64 match_account_id = 8;
+    OrderSide order_side = 9;
+    bool is_maker = 10;
+    string price = 11;
+    string quantity = 12;
+    string amount = 13;
+    string trade_fee = 14;
+}
+
+message CreateSymbolRequest {
+    Symbol symbol = 1;
+}
+
+message CreateSymbolResponse {
+    ResultCode ret = 1;
+    string message = 2;
+}
+
+message UpdateSymbolRequest {
+    Symbol symbol = 1;
+}
+
+message UpdateSymbolResponse {
+    ResultCode ret = 1;
+    string message = 2;
+}
+
+message RemoveSymbolRequest {
+    Symbol symbol = 1;
+}
+
+message RemoveSymbolResponse {
+    ResultCode ret = 1;
+    string message = 2;
+}
+
+message PlaceOrderRequest {
+    Order order = 1;
+}
+
+message PlaceOrderResponse {
+    ResultCode ret = 1;
+    string message = 2;
+}
+
+message CancelOrderRequest {
+    uint64 symbol_id = 1;
+    uint64 order_id = 2;
+}
+
+message CancelOrderResponse {
+    ResultCode ret = 1;
+    string message = 2;
+}
+
+message QueryOrderRequest {
+    uint64 symbol_id = 1;
+    uint64 order_id = 2;
+}
+
+message QueryOrderResponse {
+    ResultCode ret = 1;
+    string message = 2;
+}
+
+service MatchService {
+    rpc CreateSymbol(CreateSymbolRequest) returns (CreateSymbolResponse) {}
+    rpc UpdateSymbol(UpdateSymbolRequest) returns (UpdateSymbolResponse) {}
+    rpc RemoveSymbol(RemoveSymbolRequest) returns (RemoveSymbolResponse) {}
+
+    rpc PlaceOrder(PlaceOrderRequest) returns (PlaceOrderResponse) {}
+    rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse) {}
+    rpc QueryOrder(QueryOrderRequest) returns (QueryOrderResponse) {}
+
+    // 
+}

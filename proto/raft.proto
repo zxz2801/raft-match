@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package raft;
+
+enum ResultCode {
+    OK = 0;
+    FAIL = 1;
+}
+
+message PostDataRequest {
+    repeated bytes data = 1;
+}
+
+message PostDataResponse {
+    repeated ResultCode ret = 1;
+}
+
+
+service RaftService {
+    rpc PostData(PostDataRequest) returns (PostDataResponse) {}
+}
