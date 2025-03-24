@@ -1,5 +1,5 @@
-use crate::raft::StateMachine;
 use crate::engine::MatchEngine;
+use crate::raft::StateMachine;
 
 #[derive(Default, Clone)]
 pub struct StateMatch {

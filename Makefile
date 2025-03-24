@@ -20,5 +20,7 @@ fix: ## Automatically apply lint suggestions. This flag implies `--no-deps` and 
 
 test: ## Run tests for all the workspace members
 	@cargo test --release --all
+fmt:
+	@cargo fmt --all
 
-.PHONY: clippy fmt test
+.PHONY: clippy fmt test fmt
