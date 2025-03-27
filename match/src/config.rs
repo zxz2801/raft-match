@@ -1,4 +1,4 @@
-use log::{error, warn};
+use log::warn;
 use once_cell::sync::OnceCell;
 use serde_derive::Deserialize;
 use std::sync::Mutex;
@@ -56,12 +56,7 @@ impl RuntimeConfig {
                 return Some(RuntimeConfig::new());
             }
         };
-        instance().lock().unwrap().addr.clone_from(&config.addr);
-        instance()
-            .lock()
-            .unwrap()
-            .metrics_addr
-            .clone_from(&config.metrics_addr);
+        instance().lock().unwrap().clone_from(&config);
         Some(config)
     }
 }

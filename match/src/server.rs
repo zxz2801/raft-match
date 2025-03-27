@@ -34,18 +34,25 @@ impl Server {
         let proposals: Arc<std::sync::Mutex<VecDeque<Proposal>>> =
             Arc::new(std::sync::Mutex::new(VecDeque::new()));
         let state_match = state_match::StateMatch::new();
+        let id = config::instance().lock().unwrap().id;
+        let start_with_leader = config::instance().lock().unwrap().start_with_leader;
         let (in_mailbox, rx) = mpsc::channel();
         let out_mailbox = crate::raft::node::Node::start_raft(
-            config::instance().lock().unwrap().start_with_leader,
-            config::instance().lock().unwrap().id,
+            start_with_leader,
+            id,
             rx,
             proposals.clone(),
             state_match,
         );
         Self::start_run_out_message(out_mailbox);
+        if start_with_leader {
+            let ids: Vec<u64> = config::instance().lock().unwrap().node_list.iter().map(|n| n.id).collect();
+            let ids = ids.iter().filter(|i| **i != id).cloned().collect();
+            crate::raft::node::add_all_followers(ids, &proposals);
+        }
         Server {
-            in_mailbox: in_mailbox,
-            proposals: proposals,
+            in_mailbox,
+            proposals,
         }
     }
 

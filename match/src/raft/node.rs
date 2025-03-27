@@ -2,19 +2,18 @@
 
 use slog::Drain;
 use std::collections::{HashMap, VecDeque};
-use std::sync::mpsc::{self, Receiver, Sender, SyncSender, TryRecvError};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::{Duration, Instant};
-use std::{str, thread};
 
 use protobuf::Message as PbMessage;
 use raft::storage::MemStorage;
 use raft::{prelude::*, StateRole};
-use regex::Regex;
 
 use crate::raft::proposal::Proposal;
 use crate::raft::StateMachine;
-use slog::{error, info, o};
+use slog::{error, o};
 
 fn example_config() -> Config {
     Config {
@@ -32,19 +31,19 @@ fn is_initial_msg(msg: &Message) -> bool {
         || (msg_type == MessageType::MsgHeartbeat && msg.commit == 0)
 }
 
-// Proposes some conf change for peers [2, 5].
-fn add_all_followers(proposals: &Mutex<VecDeque<Proposal>>) {
-    for i in 2..6u64 {
+pub fn add_all_followers(ids: Vec<u64>, proposals: &Mutex<VecDeque<Proposal>>) {
+    for i in ids {
         let mut conf_change = ConfChange::default();
         conf_change.node_id = i;
         conf_change.set_change_type(ConfChangeType::AddNode);
         loop {
             let (proposal, rx) = Proposal::conf_change(&conf_change);
             proposals.lock().unwrap().push_back(proposal);
-            if rx.recv().unwrap() {
-                break;
-            }
-            thread::sleep(Duration::from_millis(100));
+            break;
+            // if rx.recv().unwrap() {
+            //     break;
+            // }
+            // thread::sleep(Duration::from_millis(100));
         }
     }
 }
@@ -89,8 +88,8 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
             out_mailbox,
             my_mailbox,
             kv_pairs: Default::default(),
-            proposals: proposals,
-            state_machine: state_machine,
+            proposals,
+            state_machine,
         }
     }
 
@@ -107,8 +106,8 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
             out_mailbox,
             my_mailbox,
             kv_pairs: Default::default(),
-            proposals: proposals,
-            state_machine: state_machine,
+            proposals,
+            state_machine,
         }
     }
 
@@ -145,7 +144,7 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
                 // Step raft messages.
                 // 收到其他节点消息 传递到raft系统进行处理 包括心跳 追加日志等等
                 match self.my_mailbox.try_recv() {
-                    Ok(msg) => self.step(msg, &logger),
+                    Ok(msg) => self.step(msg, logger),
                     Err(TryRecvError::Empty) => break,
                     Err(TryRecvError::Disconnected) => return,
                 }
@@ -172,7 +171,7 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
             }
 
             // 处理raft事件
-            self.on_ready(&logger);
+            self.on_ready(logger);
         }
     }
 
@@ -258,7 +257,12 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
                         // succeeded or not.
                         // 回复消息 需要查找proposals
                         let proposal = self.proposals.lock().unwrap().pop_front().unwrap();
-                        proposal.propose_success.send(true).unwrap();
+                        match proposal.propose_success.send(true) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                error!(logger, "send proposal event fail: {:?}", e);
+                            }
+                        }
                     }
                 }
             };

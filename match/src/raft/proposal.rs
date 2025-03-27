@@ -1,18 +1,8 @@
 #![allow(clippy::field_reassign_with_default)]
 
-use slog::Drain;
-use std::collections::{HashMap, VecDeque};
-use std::sync::mpsc::{self, Receiver, Sender, SyncSender, TryRecvError};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
-use std::{str, thread};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 
-use protobuf::Message as PbMessage;
-use raft::storage::MemStorage;
-use raft::{prelude::*, StateRole};
-use regex::Regex;
-
-use slog::{error, info, o};
+use raft::prelude::*;
 
 pub struct Proposal {
     pub normal: Option<(u16, String)>, // key is an u16 integer, and value is a string.
