@@ -21,6 +21,7 @@ pub struct RuntimeConfig {
     pub start_with_leader: bool,
     pub addr: String,
     pub metrics_addr: String,
+    pub base_path: String,
     pub node_list: Vec<NodeConfig>,
 }
 
@@ -32,6 +33,7 @@ impl RuntimeConfig {
             addr: "0.0.0.0:4000".to_string(),
             metrics_addr: "0.0.0.0:4010".to_string(),
             node_list: Vec::new(),
+            base_path: "./data".to_string(),
         }
     }
 

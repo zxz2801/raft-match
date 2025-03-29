@@ -8,10 +8,8 @@ mod raft_service;
 mod server;
 mod state_match;
 
-use tokio::signal;
 use clap::Parser;
-
-
+use tokio::signal;
 
 async fn shutdown_signal() {
     let ctrl_c = async {

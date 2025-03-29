@@ -8,22 +8,29 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use protobuf::Message as PbMessage;
-use raft::storage::MemStorage;
 use raft::{prelude::*, StateRole};
 
 use crate::raft::proposal::Proposal;
 use crate::raft::StateMachine;
 use slog::{error, o};
 
-fn example_config() -> Config {
+use super::storage::FileStorage;
+
+// Constants
+const TICK_INTERVAL: Duration = Duration::from_millis(100);
+const LOGGER_CHANNEL_SIZE: usize = 4096;
+
+/// Default Raft configuration
+fn default_config(id: u64) -> Config {
     Config {
+        id,
         election_tick: 10,
         heartbeat_tick: 3,
         ..Default::default()
     }
 }
 
-// The message can be used to initialize a raft node or not.
+/// Check if the message is used to initialize a raft node
 fn is_initial_msg(msg: &Message) -> bool {
     let msg_type = msg.get_msg_type();
     msg_type == MessageType::MsgRequestVote
@@ -31,37 +38,36 @@ fn is_initial_msg(msg: &Message) -> bool {
         || (msg_type == MessageType::MsgHeartbeat && msg.commit == 0)
 }
 
+/// Add all followers to the cluster
 pub fn add_all_followers(ids: Vec<u64>, proposals: &Mutex<VecDeque<Proposal>>) {
-    for i in ids {
+    for id in ids {
         let mut conf_change = ConfChange::default();
-        conf_change.node_id = i;
+        conf_change.node_id = id;
         conf_change.set_change_type(ConfChangeType::AddNode);
         loop {
             let (proposal, rx) = Proposal::conf_change(&conf_change);
             proposals.lock().unwrap().push_back(proposal);
-            break;
-            // if rx.recv().unwrap() {
-            //     break;
-            // }
-            // thread::sleep(Duration::from_millis(100));
+            if rx.recv().unwrap() {
+                break;
+            }
+            thread::sleep(Duration::from_secs(1));
         }
     }
 }
 
+/// Raft node implementation
 pub struct Node<S: StateMachine> {
-    // None if the raft is not initialized.
-    raft_group: Option<RawNode<MemStorage>>,
+    raft_group: Option<RawNode<FileStorage>>,
     out_mailbox: Sender<Message>,
     my_mailbox: Receiver<Message>,
-    // Key-value pairs after applied. `MemStorage` only contains raft logs,
-    // so we need an additional storage engine.
     kv_pairs: HashMap<u16, String>,
     state_machine: S,
     proposals: Arc<Mutex<VecDeque<Proposal>>>,
+    base_path: String,
 }
 
 impl<S: StateMachine + Send + Clone + 'static> Node<S> {
-    // Create a raft leader only with itself in its configuration.
+    /// Create a new raft leader node
     fn create_raft_leader(
         id: u64,
         out_mailbox: Sender<Message>,
@@ -69,20 +75,13 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
         proposals: Arc<Mutex<VecDeque<Proposal>>>,
         logger: &slog::Logger,
         state_machine: S,
+        base_path: &str,
     ) -> Self {
-        let mut cfg = example_config();
-        cfg.id = id;
+        let cfg = default_config(id);
         let logger = logger.new(o!("tag" => format!("peer_{}", id)));
-        let mut s = Snapshot::default();
-        // Because we don't use the same configuration to initialize every node, so we use
-        // a non-zero index to force new followers catch up logs by snapshot first, which will
-        // bring all nodes to the same initial state.
-        s.mut_metadata().index = 1;
-        s.mut_metadata().term = 1;
-        s.mut_metadata().mut_conf_state().voters = vec![1];
-        let storage = MemStorage::new();
-        storage.wl().apply_snapshot(s).unwrap();
+        let storage = FileStorage::new(base_path, true).unwrap();
         let raft_group = Some(RawNode::new(&cfg, storage, &logger).unwrap());
+
         Node {
             raft_group,
             out_mailbox,
@@ -90,40 +89,49 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
             kv_pairs: Default::default(),
             proposals,
             state_machine,
+            base_path: base_path.to_string(),
         }
     }
 
-    // Create a raft follower.
+    /// Create a new raft follower node
     fn create_raft_follower(
         id: u64,
         out_mailbox: Sender<Message>,
         my_mailbox: Receiver<Message>,
         proposals: Arc<Mutex<VecDeque<Proposal>>>,
+        logger: &slog::Logger,
         state_machine: S,
+        base_path: &str,
     ) -> Self {
+        let cfg = default_config(id);
+        let logger = logger.new(o!("tag" => format!("peer_{}", id)));
+        let storage = FileStorage::new(base_path, false).unwrap();
+        let raft_group = Some(RawNode::new(&cfg, storage, &logger).unwrap());
+
         Node {
-            raft_group: None,
+            raft_group: raft_group,
             out_mailbox,
             my_mailbox,
             kv_pairs: Default::default(),
             proposals,
             state_machine,
+            base_path: base_path.to_string(),
         }
     }
 
-    // Initialize raft for followers.
+    /// Initialize raft for followers from initial message
     fn initialize_raft_from_message(&mut self, msg: &Message, logger: &slog::Logger) {
         if !is_initial_msg(msg) {
             return;
         }
-        let mut cfg = example_config();
-        cfg.id = msg.to;
-        let logger = logger.new(o!("tag" => format!("peer_{}", msg.to)));
-        let storage = MemStorage::new();
-        self.raft_group = Some(RawNode::new(&cfg, storage, &logger).unwrap());
+
+        // let cfg = default_config(msg.to);
+        // let logger = logger.new(o!("tag" => format!("peer_{}", msg.to)));
+        // let storage = FileStorage::new(self.base_path.clone(), false).unwrap();
+        // self.raft_group = Some(RawNode::new(&cfg, storage, &logger).unwrap());
     }
 
-    // Step a raft message, initialize the raft if need.
+    /// Process a raft message
     fn step(&mut self, msg: Message, logger: &slog::Logger) {
         if self.raft_group.is_none() {
             if is_initial_msg(&msg) {
@@ -132,187 +140,243 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
                 return;
             }
         }
-        let raft_group = self.raft_group.as_mut().unwrap();
-        let _ = raft_group.step(msg);
+
+        if let Some(raft_group) = &mut self.raft_group {
+            let _ = raft_group.step(msg);
+        }
     }
 
-    fn run_background_tasks(&mut self, logger: &slog::Logger) {
-        let mut t = Instant::now();
-        loop {
-            thread::sleep(Duration::from_millis(1));
-            loop {
-                // Step raft messages.
-                // 收到其他节点消息 传递到raft系统进行处理 包括心跳 追加日志等等
-                match self.my_mailbox.try_recv() {
-                    Ok(msg) => self.step(msg, logger),
-                    Err(TryRecvError::Empty) => break,
-                    Err(TryRecvError::Disconnected) => return,
+    /// Process committed entries
+    fn handle_committed_entries(
+        raft_group: &mut RawNode<FileStorage>,
+        entries: Vec<Entry>,
+        state_machine: &mut S,
+        proposals: &Arc<Mutex<VecDeque<Proposal>>>,
+        logger: &slog::Logger,
+    ) {
+        for entry in entries {
+            if entry.data.is_empty() {
+                continue;
+            }
+
+            match entry.get_entry_type() {
+                EntryType::EntryConfChange => {
+                    let mut cc = ConfChange::default();
+                    cc.merge_from_bytes(&entry.data).unwrap();
+                    let cs = raft_group.apply_conf_change(&cc).unwrap();
+                    raft_group.raft.raft_log.store.set_conf_state(cs);
+                }
+                _ => {
+                    state_machine.apply(entry.index, entry.data.as_ref());
                 }
             }
 
-            match self.raft_group {
-                Some(ref mut raft_group) => {
-                    // 100ms调用一次raft的定时器
-                    // 内部触发选主请求 心跳包等
-                    if t.elapsed() >= Duration::from_millis(100) {
-                        raft_group.tick();
-                        t = Instant::now();
-                    }
-
-                    // 主节点 投递业务提按到raft系统
-                    if raft_group.raft.state == StateRole::Leader {
-                        let mut proposals = self.proposals.lock().unwrap();
-                        for p in proposals.iter_mut().skip_while(|p| p.proposed > 0) {
-                            Self::propose(raft_group, p);
+            if raft_group.raft.state == StateRole::Leader {
+                if let Some(proposal) = proposals.lock().unwrap().pop_front() {
+                    // check index ?
+                    if proposal.proposed <= entry.index {
+                        if let Err(e) = proposal.propose_success.send(true) {
+                            error!(logger, "Failed to send proposal event: {:?}", e);
                         }
                     }
                 }
-                _ => continue,
-            }
-
-            // 处理raft事件
-            self.on_ready(logger);
-        }
-    }
-
-    fn handle_out_messages(sender: &Sender<Message>, msgs: Vec<Message>, logger: &slog::Logger) {
-        for msg in msgs {
-            if (sender.send(msg)).is_err() {
-                error!(logger, "send raft message fail, let Raft retry it");
             }
         }
     }
 
-    fn handle_normal_entries(
-        rn: &mut RawNode<MemStorage>,
-        committed_entries: Vec<Entry>,
-        logger: &slog::Logger,
-    ) {
-        // Apply entries to state machine.
-    }
-
+    /// Process raft ready state
     fn on_ready(&mut self, logger: &slog::Logger) {
-        let raft_group = match self.raft_group {
-            Some(ref mut r) => r,
-            _ => return,
+        let raft_group = match &mut self.raft_group {
+            Some(r) => r,
+            None => return,
         };
+
         if !raft_group.has_ready() {
             return;
         }
-        let store = raft_group.raft.raft_log.store.clone();
-
-        // Get the `Ready` with `RawNode::ready` interface.
+        
         let mut ready = raft_group.ready();
 
-        let handle_messages = |msgs: Vec<Message>| {
-            for msg in msgs {
-                if (self.out_mailbox.send(msg)).is_err() {
-                    error!(logger, "send raft message fail, let Raft retry it");
-                }
-            }
-        };
-
-        // 处理节点间消息
+        // Step 1: Handle messages
         if !ready.messages().is_empty() {
-            Self::handle_out_messages(&self.out_mailbox, ready.take_messages(), logger);
+            Self::handle_out_messages(&self.out_mailbox, &ready.take_messages(), logger);
         }
 
-        // 有新快照 通知storage应用新快照
+        // Step 2: Handle snapshot if any
         if *ready.snapshot() != Snapshot::default() {
-            let index = ready.snapshot().get_metadata().index;
-            let term = ready.snapshot().get_metadata().term;
-            let s = ready.snapshot().clone();
-            if let Err(e) = store.wl().apply_snapshot(s) {
+            Self::handle_snapshot(raft_group, &ready, &mut self.state_machine, logger);
+        }
+
+        // Step 3: Handle committed entries
+        Self::handle_committed_entries(
+            raft_group,
+            ready.take_committed_entries(),
+            &mut self.state_machine,
+            &self.proposals,
+            logger,
+        );
+
+        // Step 4: Persist raft state
+        Self::persist_raft_state(raft_group, &ready, logger);
+        if !ready.persisted_messages().is_empty() {
+            Self::handle_out_messages(&self.out_mailbox, &ready.take_persisted_messages(), logger);
+        }
+
+        // Step 5: Advance raft state
+        let mut light_rd = raft_group.advance(ready);
+        if let Some(commit) = light_rd.commit_index() {
+            Self::update_commit(raft_group, commit);
+        }
+        Self::handle_out_messages(&self.out_mailbox, light_rd.messages(), logger);
+        Self::handle_committed_entries(
+            raft_group,
+            light_rd.take_committed_entries(),
+            &mut self.state_machine,
+            &self.proposals,
+            logger,
+        );
+
+        raft_group.advance_apply();
+    }
+
+    /// Handle raft messages
+    fn handle_out_messages(sender: &Sender<Message>, messages: &[Message], logger: &slog::Logger) {
+        if !messages.is_empty() {
+            for msg in messages {
+                if (sender.send(msg.clone())).is_err() {
+                    error!(logger, "Failed to send raft message, Raft will retry");
+                }
+            }
+        }
+    }
+
+    /// Handle snapshot
+    fn handle_snapshot(
+        raft_group: &mut RawNode<FileStorage>,
+        ready: &Ready,
+        state_machine: &mut S,
+        logger: &slog::Logger,
+    ) {
+        let snapshot = ready.snapshot().clone();
+        let metadata = snapshot.get_metadata().clone();
+
+        {
+            let store = &mut raft_group.raft.raft_log.store;
+            if let Err(e) = store.apply_snapshot(&snapshot) {
                 error!(
                     logger,
-                    "apply snapshot fail: {:?}, need to retry or panic", e
+                    "Failed to apply snapshot: {:?}, need to retry or panic", e
                 );
                 return;
             }
-            // Apply snapshot to state machine.
-            self.state_machine
-                .on_snapshot(index, term, ready.snapshot().get_data());
         }
 
-        // 应用状态机 这里需要投递到egging处理
-        let mut handle_committed_entries =
-            |rn: &mut RawNode<MemStorage>, committed_entries: Vec<Entry>| {
-                for entry in committed_entries {
-                    if entry.data.is_empty() {
-                        // From new elected leaders.
-                        continue;
-                    }
-                    if let EntryType::EntryConfChange = entry.get_entry_type() {
-                        // For conf change messages, make them effective.
-                        let mut cc = ConfChange::default();
-                        cc.merge_from_bytes(&entry.data).unwrap();
-                        let cs = rn.apply_conf_change(&cc).unwrap();
-                        store.wl().set_conf_state(cs);
-                    } else {
-                        // 应用状态机
-                        self.state_machine.apply(entry.index, entry.data.as_ref());
-                    }
-                    if rn.raft.state == StateRole::Leader {
-                        // The leader should response to the clients, tell them if their proposals
-                        // succeeded or not.
-                        // 回复消息 需要查找proposals
-                        let proposal = self.proposals.lock().unwrap().pop_front().unwrap();
-                        match proposal.propose_success.send(true) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                error!(logger, "send proposal event fail: {:?}", e);
-                            }
-                        }
-                    }
-                }
-            };
-        // 处理已经commit的entry
-        handle_committed_entries(raft_group, ready.take_committed_entries());
+        state_machine.on_snapshot(metadata.index, metadata.term, ready.snapshot().get_data());
+    }
 
-        // Persistent raft logs. It's necessary because in `RawNode::advance` we stabilize
-        // raft logs to the latest position.
-        // 持久化entries到storage 包括没有commit和commited的
-        // raft会根据storage已存储的position来返回entries
-        if let Err(e) = store.wl().append(ready.entries()) {
+    /// Persist raft state to storage
+    fn persist_raft_state(
+        raft_group: &mut RawNode<FileStorage>,
+        ready: &Ready,
+        logger: &slog::Logger,
+    ) {
+        let store = &mut raft_group.raft.raft_log.store;
+
+        // Persist entries
+        if let Err(e) = store.append_entries(&ready.entries()) {
             error!(
                 logger,
-                "persist raft log fail: {:?}, need to retry or panic", e
+                "Failed to persist raft log: {:?}, need to retry or panic", e
             );
             return;
         }
 
-        // 存储raft状态
+        // Persist hard state
         if let Some(hs) = ready.hs() {
-            // Raft HardState changed, and we need to persist it.
-            store.wl().set_hardstate(hs.clone());
+            store.set_hardstate(hs.clone());
         }
-
-        // 通知其他节点 持久化情况
-        if !ready.persisted_messages().is_empty() {
-            // Send out the persisted messages come from the node.
-            handle_messages(ready.take_persisted_messages());
-        }
-
-        // Call `RawNode::advance` interface to update position flags in the raft.
-        // 存储后推进raft状态
-        let mut light_rd = raft_group.advance(ready);
-        // Update commit index.
-        // 更新已提交index
-        if let Some(commit) = light_rd.commit_index() {
-            store.wl().mut_hard_state().set_commit(commit);
-        }
-        // Send out the messages.
-        // 发送此次产生的消息
-        handle_messages(light_rd.take_messages());
-        // Apply all committed entries.
-        // 应用状态机
-        handle_committed_entries(raft_group, light_rd.take_committed_entries());
-        // Advance the apply index.
-        raft_group.advance_apply();
     }
 
-    fn propose(raft_group: &mut RawNode<MemStorage>, proposal: &mut Proposal) {
-        let last_index1 = raft_group.raft.raft_log.last_index() + 1;
+    /// Update commit
+    fn update_commit(raft_group: &mut RawNode<FileStorage>, commit: u64) {
+        let store = &mut raft_group.raft.raft_log.store;
+        store.set_commit(commit);
+    }
+
+    /// Run background tasks for the raft node
+    fn run_background_tasks(&mut self, logger: &slog::Logger) {
+        let mut last_tick = Instant::now();
+
+        loop {
+            thread::sleep(Duration::from_millis(1));
+
+            // Process incoming messages
+            while let Ok(msg) = self.my_mailbox.try_recv() {
+                self.step(msg, logger);
+            }
+
+            // Process raft group tasks
+            if let Some(raft_group) = &mut self.raft_group {
+                // Tick raft
+                if last_tick.elapsed() >= TICK_INTERVAL {
+                    raft_group.tick();
+                    last_tick = Instant::now();
+                }
+
+                // Propose entries if leader
+                if raft_group.raft.state == StateRole::Leader {
+                    let mut proposals = self.proposals.lock().unwrap();
+                    for p in proposals.iter_mut().skip_while(|p| p.proposed > 0) {
+                        Self::propose(raft_group, p);
+                    }
+                }
+            }
+
+            // Process ready state
+            self.on_ready(logger);
+        }
+    }
+
+    /// Start a new raft node
+    pub fn start_raft(
+        with_leader: bool,
+        id: u64,
+        rx: Receiver<Message>,
+        proposals: Arc<Mutex<VecDeque<Proposal>>>,
+        state_machine: S,
+        base_path: &str,
+    ) -> Receiver<Message> {
+        // Setup logger
+        let decorator = slog_term::TermDecorator::new().build();
+        let drain = slog_term::FullFormat::new(decorator).build().fuse();
+        let drain = slog_async::Async::new(drain)
+            .chan_size(LOGGER_CHANNEL_SIZE)
+            .overflow_strategy(slog_async::OverflowStrategy::Block)
+            .build()
+            .fuse();
+        let logger = slog::Logger::root(drain, o!());
+
+        let (sx, out_mailbox) = mpsc::channel();
+
+        // Create and start node
+        let mut node = if with_leader {
+            Node::create_raft_leader(id, sx, rx, proposals, &logger, state_machine, base_path)
+        } else {
+            Node::create_raft_follower(id, sx, rx, proposals, &logger,state_machine, base_path)
+        };
+
+        let logger = logger.clone();
+        thread::spawn(move || loop {
+            node.run_background_tasks(&logger);
+        });
+
+        out_mailbox
+    }
+
+    /// Propose a new entry to the raft group
+    fn propose(raft_group: &mut RawNode<FileStorage>, proposal: &mut Proposal) {
+        let last_index = raft_group.raft.raft_log.last_index() + 1;
+
         if let Some((ref key, ref value)) = proposal.normal {
             let data = format!("put {} {}", key, value).into_bytes();
             let _ = raft_group.propose(vec![], data);
@@ -323,43 +387,13 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
             unimplemented!();
         }
 
-        let last_index2 = raft_group.raft.raft_log.last_index() + 1;
-        if last_index2 == last_index1 {
-            // Propose failed, don't forget to respond to the client.
+        let new_last_index = raft_group.raft.raft_log.last_index() + 1;
+        if new_last_index == last_index {
+            // Propose failed, don't forget to respond to the client
+            // TODO: handle this
             proposal.propose_success.send(false).unwrap();
         } else {
-            proposal.proposed = last_index1;
+            proposal.proposed = last_index;
         }
-    }
-    pub fn start_raft(
-        with_leader: bool,
-        id: u64,
-        rx: Receiver<Message>,
-        proposals: Arc<Mutex<VecDeque<Proposal>>>,
-        state_machine: S,
-    ) -> Receiver<Message> {
-        let decorator = slog_term::TermDecorator::new().build();
-        let drain = ::slog_term::FullFormat::new(decorator).build().fuse();
-
-        let drain = slog_async::Async::new(drain)
-            .chan_size(4096)
-            .overflow_strategy(slog_async::OverflowStrategy::Block)
-            .build()
-            .fuse();
-        let logger = slog::Logger::root(drain, o!());
-
-        let (sx, out_mailbox) = mpsc::channel();
-
-        let mut node = match with_leader {
-            true => Node::create_raft_leader(id, sx, rx, proposals, &logger, state_machine),
-            false => Node::create_raft_follower(id, sx, rx, proposals, state_machine),
-        };
-
-        let logger = logger.clone();
-        thread::spawn(move || loop {
-            node.run_background_tasks(&logger);
-        });
-
-        out_mailbox
     }
 }

@@ -36,6 +36,7 @@ impl Server {
         let state_match = state_match::StateMatch::new();
         let id = config::instance().lock().unwrap().id;
         let start_with_leader = config::instance().lock().unwrap().start_with_leader;
+        let base_path = config::instance().lock().unwrap().base_path.clone();
         let (in_mailbox, rx) = mpsc::channel();
         let out_mailbox = crate::raft::node::Node::start_raft(
             start_with_leader,
@@ -43,13 +44,9 @@ impl Server {
             rx,
             proposals.clone(),
             state_match,
+            &base_path,
         );
         Self::start_run_out_message(out_mailbox);
-        if start_with_leader {
-            let ids: Vec<u64> = config::instance().lock().unwrap().node_list.iter().map(|n| n.id).collect();
-            let ids = ids.iter().filter(|i| **i != id).cloned().collect();
-            crate::raft::node::add_all_followers(ids, &proposals);
-        }
         Server {
             in_mailbox,
             proposals,
@@ -62,6 +59,7 @@ impl Server {
         self.init_logger().await;
         self.start_grpc_server().await;
         self.start_metrics_server().await;
+        self.test_data().await;
     }
 
     pub fn stop(&mut self) {
@@ -133,10 +131,43 @@ impl Server {
                 while let Ok(msg) = out_mailbox.recv() {
                     let item = client.clone();
                     tokio::spawn(async move {
-                        item.lock().await.post_data(msg).await;
+                        let raft_client = item.lock().await;
+                        let post_data = raft_client.post_data(msg);
+                        drop(raft_client); // Release the lock immediately
+                        post_data.await;
                     });
                 }
             });
+        });
+    }
+
+    async fn test_data(&self) {
+        let is_leader = config::instance().lock().unwrap().start_with_leader;
+        if !is_leader {
+            return;
+        }
+
+        let self_id = config::instance().lock().unwrap().id;
+        let ids: Vec<u64> = config::instance()
+            .lock()
+            .unwrap()
+            .node_list
+            .iter()
+            .map(|n| n.id)
+            .collect();
+        let ids = ids.iter().filter(|i| **i != self_id).cloned().collect();
+
+        let proposals = self.proposals.clone();
+        tokio::spawn(async move {
+            crate::raft::node::add_all_followers(ids, &proposals);
+            let mut counter = 0;
+            loop {
+                let (proposal, _rx) = Proposal::normal(1, counter.to_string());
+                proposals.lock().unwrap().push_back(proposal);
+                log::info!("Added test proposal: {}", counter);
+                counter += 1;
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            }
         });
     }
 }

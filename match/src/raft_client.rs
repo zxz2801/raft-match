@@ -3,6 +3,8 @@ use pb::raft_service_client::RaftServiceClient;
 use pb::{PostDataRequest, PostDataResponse};
 use protobuf::Message;
 use raft::prelude::Message as RaftMessage;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tonic::transport::channel;
 
 #[allow(clippy::module_inception)]
@@ -11,68 +13,71 @@ pub mod pb {
 }
 
 pub struct RaftClient {
-    pub channels: std::collections::HashMap<u64, RaftServiceClient<tonic::transport::Channel>>,
+    pub channels:
+        Arc<Mutex<std::collections::HashMap<u64, RaftServiceClient<tonic::transport::Channel>>>>,
 }
 
 impl RaftClient {
     pub fn builder() -> RaftClient {
         RaftClient {
-            channels: std::collections::HashMap::new(),
+            channels: Arc::new(Mutex::new(std::collections::HashMap::new())),
         }
     }
 
     pub async fn initialize(&mut self) {
         let config_lock = config::instance().lock().unwrap();
+        let mut channels = self.channels.lock().await;
         for node in config_lock.node_list.iter() {
             let channel = RaftServiceClient::connect(node.addr.clone()).await;
             match channel {
                 Ok(channel) => {
-                    self.channels.insert(node.id, channel);
+                    channels.insert(node.id, channel);
                 }
                 Err(e) => {
-                    log::error!("raft client connect error: {}", e);       
+                    log::error!("raft client connect error: {}", e);
                 }
             };
         }
     }
 
-    pub async fn post_data(&mut self, data: RaftMessage) -> PostDataResponse {
-        let mut request: PostDataRequest = PostDataRequest::default();
-        request.data.push(data.write_to_bytes().unwrap());
-        log::info!("raft client post data: {}", request.data.len());
-        match self.channels.get_mut(&data.to) {
-            Some(client) => {
-                let response = client.post_data(request).await;
-                match response {
-                    Ok(response) => {
-                        response.into_inner()
-                    }
-                    Err(e) => {
-                        log::error!("raft client connect error: {}", e);
-                        PostDataResponse::default()
-                    }
-                }
-            }
-            None => {
-                let addr = config::instance().lock().unwrap().node_list[data.to as usize-1].addr.clone();
-                let channel = RaftServiceClient::connect(addr.clone()).await;
-                match channel {
-                    Ok(mut channel) => {
-                        let response = channel.post_data(request).await;
-                        match response {
-                            Ok(response) => {
-                                response.into_inner()
-                            }
-                            Err(e) => {
-                                log::error!("raft client connect error: {}", e);
-                                PostDataResponse::default()
-                            }
+    pub fn post_data(
+        &self,
+        data: RaftMessage,
+    ) -> impl std::future::Future<Output = PostDataResponse> + Send {
+        let channels = self.channels.clone();
+        async move {
+            let mut request: PostDataRequest = PostDataRequest::default();
+            request.data.push(data.write_to_bytes().unwrap());
+            log::info!("raft client post data: {}", request.data.len());
+
+            // Try to get existing channel or create new one
+            let mut client = {
+                let mut channels = channels.lock().await;
+                if let Some(client) = channels.get_mut(&data.to) {
+                    client.clone()
+                } else {
+                    let addr = config::instance().lock().unwrap().node_list[data.to as usize - 1]
+                        .addr
+                        .clone();
+                    match RaftServiceClient::connect(addr.clone()).await {
+                        Ok(channel) => {
+                            channels.insert(data.to, channel.clone());
+                            channel
+                        }
+                        Err(e) => {
+                            log::error!("raft client connect error: {}", e);
+                            return PostDataResponse::default();
                         }
                     }
-                    Err(e) => {
-                        log::error!("raft client connect error: {}", e);
-                        PostDataResponse::default()
-                    }
+                }
+            };
+
+            // Try to send request without holding the channels lock
+            match client.post_data(request).await {
+                Ok(response) => response.into_inner(),
+                Err(e) => {
+                    log::error!("raft client post data error: {}", e);
+                    PostDataResponse::default()
                 }
             }
         }

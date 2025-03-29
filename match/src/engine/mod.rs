@@ -20,7 +20,12 @@ impl MatchEngine {
 
     pub fn on_snapshot(&mut self, data: &[u8]) {
         // 从快照恢复数据
-        *self = bincode::deserialize(data).unwrap();
+        match bincode::deserialize(data) {
+            Ok(order_book) => *self = order_book,
+            Err(e) => {
+                log::error!("failed to deserialize order book: {}", e);
+            }
+        }
     }
 
     pub fn snapshot(&self) -> Vec<u8> {
