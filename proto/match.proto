@@ -33,14 +33,16 @@ enum OrderType {
 }
 
 message Symbol {
-    uint64 symbol_id = 1;
+    string symbol = 1;
     string base = 2;
     string quote = 3;
     string min_quantity = 4;
-    string min_amount = 5;
-    int32 price_precision = 6; 
-    int32 quantity_precision = 7;
-    SymbolStatus status = 8;
+    string max_quantity = 5;
+    string min_amount = 6;
+    string max_amount = 7;
+    int32 price_precision = 8; 
+    int32 quantity_precision = 9;
+    SymbolStatus status = 10;
 }
 
 message Order {
@@ -49,7 +51,7 @@ message Order {
     OrderSide order_side = 3;
     OrderType order_type = 4;
     TimeInForce time_in_force = 5;
-    uint64 symbol_id = 6;
+    string symbol = 6;
     string quantity = 7;
     string price = 8;
     string taker_fee = 9;
@@ -61,7 +63,7 @@ message Trade {
     uint64 ticket_id = 2;
     uint64 order_id = 3; 
     uint64 account_id = 4;
-    uint64 symbol_id = 5;
+    string symbol = 5;
     uint64 match_time = 6;
     uint64 match_order_id = 7;
     uint64 match_account_id = 8;
@@ -78,15 +80,6 @@ message CreateSymbolRequest {
 }
 
 message CreateSymbolResponse {
-    ResultCode ret = 1;
-    string message = 2;
-}
-
-message UpdateSymbolRequest {
-    Symbol symbol = 1;
-}
-
-message UpdateSymbolResponse {
     ResultCode ret = 1;
     string message = 2;
 }
@@ -110,7 +103,7 @@ message PlaceOrderResponse {
 }
 
 message CancelOrderRequest {
-    uint64 symbol_id = 1;
+    string symbol = 1;
     uint64 order_id = 2;
 }
 
@@ -120,7 +113,7 @@ message CancelOrderResponse {
 }
 
 message QueryOrderRequest {
-    uint64 symbol_id = 1;
+    string symbol = 1;
     uint64 order_id = 2;
 }
 
@@ -131,7 +124,6 @@ message QueryOrderResponse {
 
 service MatchService {
     rpc CreateSymbol(CreateSymbolRequest) returns (CreateSymbolResponse) {}
-    rpc UpdateSymbol(UpdateSymbolRequest) returns (UpdateSymbolResponse) {}
     rpc RemoveSymbol(RemoveSymbolRequest) returns (RemoveSymbolResponse) {}
 
     rpc PlaceOrder(PlaceOrderRequest) returns (PlaceOrderResponse) {}
