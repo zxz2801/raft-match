@@ -1,7 +1,7 @@
 #![allow(clippy::field_reassign_with_default)]
 
 use slog::Drain;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -12,7 +12,7 @@ use raft::{prelude::*, StateRole};
 
 use crate::raft::proposal::Proposal;
 use crate::raft::StateMachine;
-use slog::{error, o, info};
+use slog::{error, info, o};
 
 use super::storage::FileStorage;
 
@@ -57,13 +57,11 @@ pub fn add_all_followers(ids: Vec<u64>, proposals: &Mutex<VecDeque<Proposal>>) {
 
 /// Raft node implementation
 pub struct Node<S: StateMachine> {
-    raft_group: Option<RawNode<FileStorage>>,
+    raft_group: RawNode<FileStorage>,
     out_mailbox: Sender<Message>,
     my_mailbox: Receiver<Message>,
-    kv_pairs: HashMap<u16, String>,
     state_machine: S,
     proposals: Arc<Mutex<VecDeque<Proposal>>>,
-    base_path: String,
 }
 
 impl<S: StateMachine + Send + Clone + 'static> Node<S> {
@@ -80,16 +78,14 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
         let cfg = default_config(id);
         let logger = logger.new(o!("tag" => format!("peer_{}", id)));
         let storage = FileStorage::new(base_path, true).unwrap();
-        let raft_group = Some(RawNode::new(&cfg, storage, &logger).unwrap());
+        let raft_group = RawNode::new(&cfg, storage, &logger).unwrap();
 
         Node {
             raft_group,
             out_mailbox,
             my_mailbox,
-            kv_pairs: Default::default(),
             proposals,
             state_machine,
-            base_path: base_path.to_string(),
         }
     }
 
@@ -106,43 +102,14 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
         let cfg = default_config(id);
         let logger = logger.new(o!("tag" => format!("peer_{}", id)));
         let storage = FileStorage::new(base_path, false).unwrap();
-        let raft_group = Some(RawNode::new(&cfg, storage, &logger).unwrap());
+        let raft_group = RawNode::new(&cfg, storage, &logger).unwrap();
 
         Node {
-            raft_group: raft_group,
+            raft_group,
             out_mailbox,
             my_mailbox,
-            kv_pairs: Default::default(),
             proposals,
             state_machine,
-            base_path: base_path.to_string(),
-        }
-    }
-
-    /// Initialize raft for followers from initial message
-    fn initialize_raft_from_message(&mut self, msg: &Message, logger: &slog::Logger) {
-        if !is_initial_msg(msg) {
-            return;
-        }
-
-        // let cfg = default_config(msg.to);
-        // let logger = logger.new(o!("tag" => format!("peer_{}", msg.to)));
-        // let storage = FileStorage::new(self.base_path.clone(), false).unwrap();
-        // self.raft_group = Some(RawNode::new(&cfg, storage, &logger).unwrap());
-    }
-
-    /// Process a raft message
-    fn step(&mut self, msg: Message, logger: &slog::Logger) {
-        if self.raft_group.is_none() {
-            if is_initial_msg(&msg) {
-                self.initialize_raft_from_message(&msg, logger);
-            } else {
-                return;
-            }
-        }
-
-        if let Some(raft_group) = &mut self.raft_group {
-            let _ = raft_group.step(msg);
         }
     }
 
@@ -186,10 +153,7 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
 
     /// Process raft ready state
     fn on_ready(&mut self, logger: &slog::Logger) {
-        let raft_group = match &mut self.raft_group {
-            Some(r) => r,
-            None => return,
-        };
+        let raft_group = &mut self.raft_group;
 
         if !raft_group.has_ready() {
             return;
@@ -320,37 +284,35 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
         let mut last_tick = Instant::now();
         let mut last_save_snapshot = Instant::now();
         let mut last_index_snapshot = 0u64;
+
         loop {
             thread::sleep(Duration::from_millis(1));
-
+            let raft_group = &mut self.raft_group;
             // Process incoming messages
             while let Ok(msg) = self.my_mailbox.try_recv() {
-                self.step(msg, logger);
+                let _ = raft_group.step(msg);
             }
 
-            // Process raft group tasks
-            if let Some(raft_group) = &mut self.raft_group {
-                // Tick raft
-                if last_tick.elapsed() >= TICK_INTERVAL {
-                    raft_group.tick();
-                    last_tick = Instant::now();
-                }
+            // Tick raft
+            if last_tick.elapsed() >= TICK_INTERVAL {
+                raft_group.tick();
+                last_tick = Instant::now();
+            }
 
-                // Save snapshot
-                if last_save_snapshot.elapsed() >= SAVE_SNAPSHOT_INTERVAL
-                    && last_index_snapshot < raft_group.raft.raft_log.applied()
-                {
-                    Self::handle_save_snapshot(raft_group, &mut self.state_machine, logger);
-                    last_save_snapshot = Instant::now();
-                    last_index_snapshot = raft_group.raft.raft_log.applied();
-                }
+            // Save snapshot
+            if last_save_snapshot.elapsed() >= SAVE_SNAPSHOT_INTERVAL
+                && last_index_snapshot < raft_group.raft.raft_log.applied()
+            {
+                Self::handle_save_snapshot(raft_group, &mut self.state_machine, logger);
+                last_save_snapshot = Instant::now();
+                last_index_snapshot = raft_group.raft.raft_log.applied();
+            }
 
-                // Propose entries if leader
-                if raft_group.raft.state == StateRole::Leader {
-                    let mut proposals = self.proposals.lock().unwrap();
-                    for p in proposals.iter_mut().skip_while(|p| p.proposed > 0) {
-                        Self::propose(raft_group, p);
-                    }
+            // Propose entries if leader
+            if raft_group.raft.state == StateRole::Leader {
+                let mut proposals = self.proposals.lock().unwrap();
+                for p in proposals.iter_mut().skip_while(|p| p.proposed > 0) {
+                    Self::propose(raft_group, p);
                 }
             }
 
@@ -399,9 +361,8 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
     fn propose(raft_group: &mut RawNode<FileStorage>, proposal: &mut Proposal) {
         let last_index = raft_group.raft.raft_log.last_index() + 1;
 
-        if let Some((ref key, ref value)) = proposal.normal {
-            let data = format!("put {} {}", key, value).into_bytes();
-            let _ = raft_group.propose(vec![], data);
+        if let Some(ref data) = proposal.normal {
+            let _ = raft_group.propose(vec![], data.clone());
         } else if let Some(ref cc) = proposal.conf_change {
             let _ = raft_group.propose_conf_change(vec![], cc.clone());
         } else if let Some(_transferee) = proposal.transfer_leader {

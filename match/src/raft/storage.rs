@@ -197,19 +197,31 @@ impl FileStorage {
     pub fn save_snapshot(&mut self, biz_data: Vec<u8>, applied: u64) -> Result<()> {
         let mut snapshot = self.snapshot(applied, 0)?;
         snapshot.set_data(Bytes::from(biz_data));
-        let snapshot_path = self.base_path.join(format!("snapshot_{}", applied));
+        let snapshot_path = self.base_path.join("snapshot");
+        let temp_path = self.base_path.join("snapshot.tmp");
+
+        // Write to temporary file first
         let snapshot_data = snapshot
             .write_to_bytes()
             .map_err(|e| raft::Error::Store(raft::StorageError::Other(Box::new(e))))?;
 
-        fs::write(&snapshot_path, &snapshot_data)
+        fs::write(&temp_path, &snapshot_data)
+            .map_err(|e| raft::Error::Store(raft::StorageError::Other(Box::new(e))))?;
+
+        // Remove old snapshot if exists
+        if snapshot_path.exists() {
+            fs::remove_file(&snapshot_path)
+                .map_err(|e| raft::Error::Store(raft::StorageError::Other(Box::new(e))))?;
+        }
+
+        // Rename temp file to actual snapshot file
+        fs::rename(&temp_path, &snapshot_path)
             .map_err(|e| raft::Error::Store(raft::StorageError::Other(Box::new(e))))?;
 
         self.mem_storage
             .wl()
             .compact(snapshot.get_metadata().index)
             .unwrap();
-        // 删除前面的segment
         let mut to_remove = Vec::new();
         for (start_index, segment) in self.segments.iter_mut() {
             if segment.get_end_index() <= snapshot.get_metadata().index {

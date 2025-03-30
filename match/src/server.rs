@@ -162,7 +162,7 @@ impl Server {
             crate::raft::node::add_all_followers(ids, &proposals);
             let mut counter = 0;
             loop {
-                let (proposal, _rx) = Proposal::normal(1, counter.to_string());
+                let (proposal, _rx) = Proposal::normal( counter.to_string().into_bytes());
                 proposals.lock().unwrap().push_back(proposal);
                 log::info!("Added test proposal: {}", counter);
                 counter += 1;

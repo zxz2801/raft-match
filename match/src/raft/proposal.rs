@@ -5,7 +5,7 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 use raft::prelude::*;
 
 pub struct Proposal {
-    pub normal: Option<(u16, String)>, // key is an u16 integer, and value is a string.
+    pub normal: Option<Vec<u8>>, // key is an u16 integer, and value is a string.
     pub conf_change: Option<ConfChange>, // conf change.
     pub transfer_leader: Option<u64>,
     // If it's proposed, it will be set to the index of the entry.
@@ -26,10 +26,10 @@ impl Proposal {
         (proposal, rx)
     }
 
-    pub fn normal(key: u16, value: String) -> (Self, Receiver<bool>) {
+    pub fn normal(data: Vec<u8>) -> (Self, Receiver<bool>) {
         let (tx, rx) = mpsc::sync_channel(1);
         let proposal = Proposal {
-            normal: Some((key, value)),
+            normal: Some(data),
             conf_change: None,
             transfer_leader: None,
             proposed: 0,

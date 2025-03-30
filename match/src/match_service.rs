@@ -30,7 +30,7 @@ impl MatchService for MatchServiceSVC {
         request: tonic::Request<PlaceOrderRequest>,
     ) -> Result<tonic::Response<PlaceOrderResponse>, tonic::Status> {
         log::info!("place order {:?}", request.get_ref());
-        let (proposal, rx) = Proposal::normal(1, "1".to_string());
+        let (proposal, rx) = Proposal::normal("1".to_string().into_bytes());
         server::instance().lock().await.add_proposal(proposal).await;
         rx.recv()
             .map_err(|_| tonic::Status::internal("raft error"))?;
