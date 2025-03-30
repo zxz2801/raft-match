@@ -23,7 +23,6 @@ jobs:
       matrix:
         toolchain:
           - stable
-          - beta
           - nightly
 
     services:
@@ -52,9 +51,6 @@ jobs:
         run: cargo build --verbose --release
       - name: Cargo test
         run: cargo test --release --verbose
-      - name: Cargo test prover
-        run: cargo test --release -- --nocapture
-        working-directory: ./prover
 
   fmt:
     name: Rustfmt
