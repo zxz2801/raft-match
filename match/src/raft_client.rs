@@ -5,7 +5,6 @@ use protobuf::Message;
 use raft::prelude::Message as RaftMessage;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tonic::transport::channel;
 
 #[allow(clippy::module_inception)]
 pub mod pb {

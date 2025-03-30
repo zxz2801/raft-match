@@ -55,6 +55,9 @@ tempfile = "3.8.1"
 raft = { git = "https://github.com/zxz2801/raft-rs.git", branch = "master" }
 raft-proto = { git = "https://github.com/zxz2801/raft-rs.git", branch = "master" }
 
+rust_decimal = { version = "1.30", features = ["serde"] }
+rust_decimal_macros = "1.30"
+
 [build-dependencies]
 tonic-build = "0.8.0"
 
