@@ -165,6 +165,11 @@ impl Segment {
         Ok(())
     }
 
+    pub fn clear(&mut self) -> io::Result<()> {
+        std::fs::remove_file(&self.path)?;
+        Ok(())
+    }
+
     pub fn get_start_index(&self) -> u64 {
         self.start_index
     }

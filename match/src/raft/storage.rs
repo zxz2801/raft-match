@@ -1,4 +1,5 @@
 use crate::raft::segment::Segment;
+use prost::bytes::Bytes;
 use protobuf::Message;
 use raft::eraftpb::Entry;
 use raft::eraftpb::HardState;
@@ -8,7 +9,6 @@ use raft_proto::eraftpb::ConfState;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use prost::bytes::Bytes;
 
 pub struct FileStorage {
     mem_storage: MemStorage,
@@ -84,6 +84,8 @@ impl FileStorage {
             a_idx.cmp(&b_idx)
         });
 
+        let last_index = mem_storage.last_index().unwrap();
+
         // Load each segment
         for segment_path in segment_files {
             let start_index = segment_path
@@ -105,7 +107,9 @@ impl FileStorage {
                 entry
                     .merge_from_bytes(&entry_data)
                     .map_err(|e| raft::Error::Store(raft::StorageError::Other(Box::new(e))))?;
-                entries.push(entry);
+                if entry.index > last_index {
+                    entries.push(entry);
+                }
                 current_index += 1;
             }
 
@@ -177,7 +181,9 @@ impl FileStorage {
     }
 
     pub fn apply_snapshot(&mut self, snapshot: &Snapshot) -> Result<()> {
-        let snapshot_path = self.base_path.join("snapshot");
+        let snapshot_path = self
+            .base_path
+            .join(format!("snapshot_{}", snapshot.get_metadata().index));
         let snapshot_data = snapshot
             .write_to_bytes()
             .map_err(|e| raft::Error::Store(raft::StorageError::Other(Box::new(e))))?;
@@ -185,6 +191,35 @@ impl FileStorage {
         fs::write(&snapshot_path, &snapshot_data)
             .map_err(|e| raft::Error::Store(raft::StorageError::Other(Box::new(e))))?;
         self.mem_storage.wl().apply_snapshot(snapshot.clone())?;
+        Ok(())
+    }
+
+    pub fn save_snapshot(&mut self, biz_data: Vec<u8>, applied: u64) -> Result<()> {
+        let mut snapshot = self.snapshot(applied, 0)?;
+        snapshot.set_data(Bytes::from(biz_data));
+        let snapshot_path = self.base_path.join(format!("snapshot_{}", applied));
+        let snapshot_data = snapshot
+            .write_to_bytes()
+            .map_err(|e| raft::Error::Store(raft::StorageError::Other(Box::new(e))))?;
+
+        fs::write(&snapshot_path, &snapshot_data)
+            .map_err(|e| raft::Error::Store(raft::StorageError::Other(Box::new(e))))?;
+
+        self.mem_storage
+            .wl()
+            .compact(snapshot.get_metadata().index)
+            .unwrap();
+        // 删除前面的segment
+        let mut to_remove = Vec::new();
+        for (start_index, segment) in self.segments.iter_mut() {
+            if segment.get_end_index() <= snapshot.get_metadata().index {
+                segment.clear()?;
+                to_remove.push(*start_index);
+            }
+        }
+        for start_index in to_remove {
+            self.segments.remove(&start_index);
+        }
         Ok(())
     }
 }

@@ -2,7 +2,7 @@
 
 use slog::Drain;
 use std::collections::{HashMap, VecDeque};
-use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -12,14 +12,14 @@ use raft::{prelude::*, StateRole};
 
 use crate::raft::proposal::Proposal;
 use crate::raft::StateMachine;
-use slog::{error, o};
+use slog::{error, o, info};
 
 use super::storage::FileStorage;
 
 // Constants
 const TICK_INTERVAL: Duration = Duration::from_millis(100);
 const LOGGER_CHANNEL_SIZE: usize = 4096;
-
+const SAVE_SNAPSHOT_INTERVAL: Duration = Duration::from_secs(600);
 /// Default Raft configuration
 fn default_config(id: u64) -> Config {
     Config {
@@ -194,7 +194,7 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
         if !raft_group.has_ready() {
             return;
         }
-        
+
         let mut ready = raft_group.ready();
 
         // Step 1: Handle messages
@@ -274,6 +274,18 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
         state_machine.on_snapshot(metadata.index, metadata.term, ready.snapshot().get_data());
     }
 
+    fn handle_save_snapshot(
+        raft_group: &mut RawNode<FileStorage>,
+        state_machine: &mut S,
+        logger: &slog::Logger,
+    ) {
+        let biz_data = state_machine.snapshot();
+        let applied = raft_group.raft.raft_log.applied();
+        let store = &mut raft_group.raft.raft_log.store;
+        store.save_snapshot(biz_data, applied).unwrap();
+        info!(logger, "Save snapshot at index: {}", applied);
+    }
+
     /// Persist raft state to storage
     fn persist_raft_state(
         raft_group: &mut RawNode<FileStorage>,
@@ -306,7 +318,8 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
     /// Run background tasks for the raft node
     fn run_background_tasks(&mut self, logger: &slog::Logger) {
         let mut last_tick = Instant::now();
-
+        let mut last_save_snapshot = Instant::now();
+        let mut last_index_snapshot = 0u64;
         loop {
             thread::sleep(Duration::from_millis(1));
 
@@ -321,6 +334,15 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
                 if last_tick.elapsed() >= TICK_INTERVAL {
                     raft_group.tick();
                     last_tick = Instant::now();
+                }
+
+                // Save snapshot
+                if last_save_snapshot.elapsed() >= SAVE_SNAPSHOT_INTERVAL
+                    && last_index_snapshot < raft_group.raft.raft_log.applied()
+                {
+                    Self::handle_save_snapshot(raft_group, &mut self.state_machine, logger);
+                    last_save_snapshot = Instant::now();
+                    last_index_snapshot = raft_group.raft.raft_log.applied();
                 }
 
                 // Propose entries if leader
@@ -362,7 +384,7 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
         let mut node = if with_leader {
             Node::create_raft_leader(id, sx, rx, proposals, &logger, state_machine, base_path)
         } else {
-            Node::create_raft_follower(id, sx, rx, proposals, &logger,state_machine, base_path)
+            Node::create_raft_follower(id, sx, rx, proposals, &logger, state_machine, base_path)
         };
 
         let logger = logger.clone();
