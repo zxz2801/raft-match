@@ -18,6 +18,7 @@ pub fn init_registry() {
     let _ = REGISTRY_INSTANCE.register(Box::new(METHOD_HISTOGRAM_VEC.clone()));
 }
 
+#[allow(unused)]
 pub async fn record_metrics<F, Fut, T>(
     method_name: &'static str,
     handler: F,

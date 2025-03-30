@@ -9,6 +9,7 @@ pub struct SymbolManager {
     matchers: HashMap<String, Matcher>,
 }
 
+#[allow(unused)]
 impl SymbolManager {
     pub fn new() -> Self {
         Self {

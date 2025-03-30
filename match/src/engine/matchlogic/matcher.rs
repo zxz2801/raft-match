@@ -1,9 +1,6 @@
 use crate::engine::data::OrderBook;
 use crate::engine::entry::{Order, OrderSide, OrderType, Trade};
-use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
-use std::time::SystemTime;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,12 +90,8 @@ impl Matcher {
                         orders.remove(0);
                         if orders.is_empty() {
                             match order.side {
-                                OrderSide::Buy => {
-                                    self.orderbook.asks.remove(&price)
-                                }
-                                OrderSide::Sell => {
-                                    self.orderbook.bids.remove(&price)
-                                }
+                                OrderSide::Buy => self.orderbook.asks.remove(&price),
+                                OrderSide::Sell => self.orderbook.bids.remove(&price),
                             };
                         }
                     }

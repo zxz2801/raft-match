@@ -1,4 +1,4 @@
-use crate::engine::engine::MatchEngine;
+use crate::engine::matchengine::MatchEngine;
 use crate::raft::StateMachine;
 
 #[derive(Default, Clone)]
@@ -15,14 +15,14 @@ impl StateMatch {
 }
 
 impl StateMachine for StateMatch {
-    fn apply(&mut self, index: u64, data: &[u8]) {
+    fn apply(&mut self, _index: u64, data: &[u8]) {
         self.match_engine.on_message(data);
     }
     fn snapshot(&self) -> Vec<u8> {
         self.match_engine.snapshot()
     }
 
-    fn on_snapshot(&mut self, last_index: u64, last_term: u64, data: &[u8]) {
+    fn on_snapshot(&mut self, _last_index: u64, _last_term: u64, data: &[u8]) {
         self.match_engine.on_snapshot(data);
     }
 }

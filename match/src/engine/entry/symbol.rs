@@ -1,5 +1,4 @@
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
@@ -26,7 +25,9 @@ pub enum SymbolStatus {
     Delisted,
 }
 
+#[allow(unused)]
 impl Symbol {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: String,
         base_currency: String,

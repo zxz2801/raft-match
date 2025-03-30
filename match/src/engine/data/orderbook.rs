@@ -11,6 +11,7 @@ pub struct OrderBook {
     pub orders_by_id: HashMap<String, Order>,
 }
 
+#[allow(unused)]
 impl OrderBook {
     pub fn new(symbol: String) -> Self {
         Self {
@@ -23,8 +24,8 @@ impl OrderBook {
 
     pub fn add_order(&mut self, order: Order) {
         let orders = match order.side {
-            OrderSide::Buy => self.bids.entry(order.price).or_insert_with(Vec::new),
-            OrderSide::Sell => self.asks.entry(order.price).or_insert_with(Vec::new),
+            OrderSide::Buy => self.bids.entry(order.price).or_default(),
+            OrderSide::Sell => self.asks.entry(order.price).or_default(),
         };
         orders.push(order.clone());
         self.orders_by_id.insert(order.id.clone(), order);
@@ -57,11 +58,11 @@ impl OrderBook {
     }
 
     pub fn get_best_bid(&self) -> Option<Decimal> {
-        self.bids.keys().next_back().map(|&k| (k))
+        self.bids.keys().next_back().copied()
     }
 
     pub fn get_best_ask(&self) -> Option<Decimal> {
-        self.asks.keys().next().map(|&k| (k))
+        self.asks.keys().next().copied()
     }
 
     pub fn get_spread(&self) -> Option<Decimal> {

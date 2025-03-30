@@ -127,7 +127,6 @@ impl Server {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
                 let client = Arc::new(Mutex::new(raft_client::RaftClient::builder()));
-                client.lock().await.initialize().await;
                 while let Ok(msg) = out_mailbox.recv() {
                     let item = client.clone();
                     tokio::spawn(async move {

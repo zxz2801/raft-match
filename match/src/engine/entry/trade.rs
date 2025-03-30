@@ -13,6 +13,7 @@ pub struct Trade {
     pub created_at: SystemTime,
 }
 
+#[allow(unused)]
 impl Trade {
     pub fn new(
         id: String,

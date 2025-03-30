@@ -4,13 +4,13 @@ use pb::match_service_server::MatchService;
 use pb::{
     CancelOrderRequest, CancelOrderResponse, CreateSymbolRequest, CreateSymbolResponse,
     PlaceOrderRequest, PlaceOrderResponse, QueryOrderRequest, QueryOrderResponse,
-    RemoveSymbolRequest, RemoveSymbolResponse
+    RemoveSymbolRequest, RemoveSymbolResponse,
 };
 use rust_decimal::Decimal;
 
-use crate::engine::engine::MatchCmd;
 use crate::engine::entry::Order;
 use crate::engine::entry::Symbol;
+use crate::engine::matchengine::MatchCmd;
 use crate::raft::proposal::Proposal;
 use crate::server;
 
@@ -36,44 +36,45 @@ impl MatchService for MatchServiceSVC {
         request: tonic::Request<PlaceOrderRequest>,
     ) -> Result<tonic::Response<PlaceOrderResponse>, tonic::Status> {
         log::info!("place order {:?}", request.get_ref());
-        match &request.get_ref().order {
-            Some(order) => {
-                let price = Decimal::from_str(&order.price)
-                    .map_err(|_| tonic::Status::invalid_argument("invalid price"))?;
-                let quantity = Decimal::from_str(&order.quantity)
-                    .map_err(|_| tonic::Status::invalid_argument("invalid quantity"))?;
-                let order_side = match order.order_side() {
-                    crate::match_service::pb::OrderSide::Buy => crate::engine::entry::OrderSide::Buy,
-                    crate::match_service::pb::OrderSide::Sell => crate::engine::entry::OrderSide::Sell,
-                };
-                let order_type = match order.order_type() {
-                    crate::match_service::pb::OrderType::Limit => crate::engine::entry::OrderType::Limit,
-                    crate::match_service::pb::OrderType::LimitMaker => {
-                        crate::engine::entry::OrderType::Limit
-                    }
-                    crate::match_service::pb::OrderType::Market => crate::engine::entry::OrderType::Market,
-                };
-                let match_order = Order::new(
-                    order.order_id.to_string(),
-                    order.symbol.clone(),
-                    order_type,
-                    order_side,
-                    price,
-                    quantity,
-                );
-                let cmd = MatchCmd {
-                    cmd: crate::engine::engine::MatchCmdType::PlaceOrder,
-                    order: Some(match_order),
-                    symbol: None,
-                };
-                let data = bincode::serialize(&cmd)
-                    .map_err(|_| tonic::Status::internal("serialize error"))?;
-                let (proposal, rx) = Proposal::normal(data);
-                server::instance().lock().await.add_proposal(proposal).await;
-                rx.recv()
-                    .map_err(|_| tonic::Status::internal("raft error"))?;
-            }
-            None => {}
+        if let Some(order) = &request.get_ref().order {
+            let price = Decimal::from_str(&order.price)
+                .map_err(|_| tonic::Status::invalid_argument("invalid price"))?;
+            let quantity = Decimal::from_str(&order.quantity)
+                .map_err(|_| tonic::Status::invalid_argument("invalid quantity"))?;
+            let order_side = match order.order_side() {
+                crate::match_service::pb::OrderSide::Buy => crate::engine::entry::OrderSide::Buy,
+                crate::match_service::pb::OrderSide::Sell => crate::engine::entry::OrderSide::Sell,
+            };
+            let order_type = match order.order_type() {
+                crate::match_service::pb::OrderType::Limit => {
+                    crate::engine::entry::OrderType::Limit
+                }
+                crate::match_service::pb::OrderType::LimitMaker => {
+                    crate::engine::entry::OrderType::Limit
+                }
+                crate::match_service::pb::OrderType::Market => {
+                    crate::engine::entry::OrderType::Market
+                }
+            };
+            let match_order = Order::new(
+                order.order_id.to_string(),
+                order.symbol.clone(),
+                order_type,
+                order_side,
+                price,
+                quantity,
+            );
+            let cmd = MatchCmd {
+                cmd: crate::engine::matchengine::MatchCmdType::PlaceOrder,
+                order: Some(match_order),
+                symbol: None,
+            };
+            let data =
+                bincode::serialize(&cmd).map_err(|_| tonic::Status::internal("serialize error"))?;
+            let (proposal, rx) = Proposal::normal(data);
+            server::instance().lock().await.add_proposal(proposal).await;
+            rx.recv()
+                .map_err(|_| tonic::Status::internal("raft error"))?;
         };
 
         Ok(tonic::Response::new(PlaceOrderResponse {
@@ -87,20 +88,20 @@ impl MatchService for MatchServiceSVC {
         request: tonic::Request<CancelOrderRequest>,
     ) -> Result<tonic::Response<CancelOrderResponse>, tonic::Status> {
         log::info!("cancel order {:?}", request.get_ref());
-        let order_id = request.get_ref().order_id.clone();
+        let order_id = request.get_ref().order_id;
 
         let mut match_order = Order::default();
         match_order.id = order_id.to_string();
         match_order.symbol = request.get_ref().symbol.clone();
 
         let cmd = MatchCmd {
-            cmd: crate::engine::engine::MatchCmdType::CancelOrder,
+            cmd: crate::engine::matchengine::MatchCmdType::CancelOrder,
             order: Some(match_order),
             symbol: None,
         };
 
-        let data = bincode::serialize(&cmd)
-            .map_err(|_| tonic::Status::internal("serialize error"))?;
+        let data =
+            bincode::serialize(&cmd).map_err(|_| tonic::Status::internal("serialize error"))?;
         let (proposal, rx) = Proposal::normal(data);
         server::instance().lock().await.add_proposal(proposal).await;
         rx.recv()
@@ -136,12 +137,12 @@ impl MatchService for MatchServiceSVC {
             max_amount,
         );
         let cmd = MatchCmd {
-            cmd: crate::engine::engine::MatchCmdType::CreateSymbol,
+            cmd: crate::engine::matchengine::MatchCmdType::CreateSymbol,
             order: None,
             symbol: Some(match_symbol),
         };
-        let data = bincode::serialize(&cmd)
-            .map_err(|_| tonic::Status::internal("serialize error"))?;
+        let data =
+            bincode::serialize(&cmd).map_err(|_| tonic::Status::internal("serialize error"))?;
         let (proposal, rx) = Proposal::normal(data);
         server::instance().lock().await.add_proposal(proposal).await;
         rx.recv()
@@ -177,12 +178,12 @@ impl MatchService for MatchServiceSVC {
             max_amount,
         );
         let cmd = MatchCmd {
-            cmd: crate::engine::engine::MatchCmdType::RemoveSymbol,
+            cmd: crate::engine::matchengine::MatchCmdType::RemoveSymbol,
             order: None,
             symbol: Some(match_symbol),
         };
-        let data = bincode::serialize(&cmd)
-            .map_err(|_| tonic::Status::internal("serialize error"))?;
+        let data =
+            bincode::serialize(&cmd).map_err(|_| tonic::Status::internal("serialize error"))?;
         let (proposal, rx) = Proposal::normal(data);
         server::instance().lock().await.add_proposal(proposal).await;
         rx.recv()

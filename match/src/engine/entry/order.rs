@@ -41,6 +41,7 @@ pub struct Order {
     pub updated_at: SystemTime,
 }
 
+#[allow(unused)]
 impl Order {
     pub fn new(
         id: String,

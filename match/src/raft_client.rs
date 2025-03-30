@@ -23,22 +23,6 @@ impl RaftClient {
         }
     }
 
-    pub async fn initialize(&mut self) {
-        let config_lock = config::instance().lock().unwrap();
-        let mut channels = self.channels.lock().await;
-        for node in config_lock.node_list.iter() {
-            let channel = RaftServiceClient::connect(node.addr.clone()).await;
-            match channel {
-                Ok(channel) => {
-                    channels.insert(node.id, channel);
-                }
-                Err(e) => {
-                    log::error!("raft client connect error: {}", e);
-                }
-            };
-        }
-    }
-
     pub fn post_data(
         &self,
         data: RaftMessage,

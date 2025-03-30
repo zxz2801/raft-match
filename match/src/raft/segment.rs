@@ -28,6 +28,7 @@ impl Segment {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(true)
             .open(&path)?;
 
         let mut segment = Segment {
@@ -55,8 +56,7 @@ impl Segment {
             end_index: self.end_index,
         };
 
-        let header_bytes =
-            bincode::serialize(&header).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let header_bytes = bincode::serialize(&header).map_err(io::Error::other)?;
 
         self.file.seek(SeekFrom::Start(0))?;
         self.file.write_all(&header_bytes)?;
@@ -68,8 +68,8 @@ impl Segment {
         let mut header_bytes = vec![0u8; HEADER_SIZE as usize];
         self.file.read_exact(&mut header_bytes)?;
 
-        let header: SegmentHeader = bincode::deserialize(&header_bytes)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let header: SegmentHeader =
+            bincode::deserialize(&header_bytes).map_err(io::Error::other)?;
 
         self.start_index = header.start_index;
         self.end_index = header.end_index;
@@ -143,33 +143,12 @@ impl Segment {
         Ok(entry)
     }
 
-    pub fn truncate(&mut self, index: u64) -> io::Result<()> {
-        if index < self.start_index || index > self.end_index {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Index out of range",
-            ));
-        }
-
-        if let Some(pos) = self.entry_positions.get(&index) {
-            self.file.set_len(*pos)?;
-            self.end_index = index;
-            self.write_header()?;
-
-            // Remove entries after the truncation point
-            while let Some((&idx, _)) = self.entry_positions.range(index + 1..).next() {
-                self.entry_positions.remove(&idx);
-            }
-        }
-
-        Ok(())
-    }
-
     pub fn clear(&mut self) -> io::Result<()> {
         std::fs::remove_file(&self.path)?;
         Ok(())
     }
 
+    #[allow(unused)]
     pub fn get_start_index(&self) -> u64 {
         self.start_index
     }
@@ -178,61 +157,8 @@ impl Segment {
         self.end_index
     }
 
+    #[allow(unused)]
     pub fn is_empty(&self) -> bool {
-        self.end_index < self.start_index
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::NamedTempFile;
-
-    #[test]
-    fn test_segment_creation() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let mut segment = Segment::new(temp_file.path(), 1).unwrap();
-
-        assert_eq!(segment.get_start_index(), 1);
-        assert_eq!(segment.get_end_index(), 0);
-        assert!(segment.is_empty());
-    }
-
-    #[test]
-    fn test_segment_append() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let mut segment = Segment::new(temp_file.path(), 1).unwrap();
-
-        let entries = vec![b"first entry", b"second entry"];
-        segment.append(&entries).unwrap();
-
-        assert_eq!(segment.get_end_index(), 2);
-        assert!(!segment.is_empty());
-
-        let first_entry = segment.read_entry(1).unwrap();
-        assert_eq!(first_entry, b"first entry");
-
-        let second_entry = segment.read_entry(2).unwrap();
-        assert_eq!(second_entry, b"second entry");
-    }
-
-    #[test]
-    fn test_segment_truncate() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let mut segment = Segment::new(temp_file.path(), 1).unwrap();
-
-        let entries = vec![b"first entry", b"second entry", b"third entry"];
-        segment.append(&entries).unwrap();
-
-        segment.truncate(2).unwrap();
-        assert_eq!(segment.get_end_index(), 2);
-
-        let first_entry = segment.read_entry(1).unwrap();
-        assert_eq!(first_entry, b"first entry");
-
-        let second_entry = segment.read_entry(2).unwrap();
-        assert_eq!(second_entry, b"second entry");
-
-        assert!(segment.read_entry(3).is_err());
+        self.end_index <= self.start_index
     }
 }

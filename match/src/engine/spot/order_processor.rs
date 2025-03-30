@@ -7,6 +7,7 @@ pub struct OrderProcessor {
     symbol_manager: SymbolManager,
 }
 
+#[allow(unused)]
 impl OrderProcessor {
     pub fn new() -> Self {
         Self {

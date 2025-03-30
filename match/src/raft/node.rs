@@ -31,6 +31,7 @@ fn default_config(id: u64) -> Config {
 }
 
 /// Check if the message is used to initialize a raft node
+#[allow(unused)]
 fn is_initial_msg(msg: &Message) -> bool {
     let msg_type = msg.get_msg_type();
     msg_type == MessageType::MsgRequestVote
@@ -259,7 +260,7 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
         let store = &mut raft_group.raft.raft_log.store;
 
         // Persist entries
-        if let Err(e) = store.append_entries(&ready.entries()) {
+        if let Err(e) = store.append_entries(ready.entries()) {
             error!(
                 logger,
                 "Failed to persist raft log: {:?}, need to retry or panic", e
