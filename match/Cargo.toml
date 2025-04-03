@@ -52,6 +52,7 @@ raft-proto = { git = "https://github.com/zxz2801/raft-rs.git", branch = "master"
 
 rust_decimal = { version = "1.30", features = ["serde"] }
 rust_decimal_macros = "1.30"
+tokio-stream = "0.1.17"
 
 [build-dependencies]
 tonic-build = "0.8.0"

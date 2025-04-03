@@ -128,13 +128,8 @@ impl Server {
             rt.block_on(async {
                 let client = Arc::new(Mutex::new(raft_client::RaftClient::builder()));
                 while let Some(msg) = out_mailbox.recv().await {
-                    let item = client.clone();
-                    tokio::spawn(async move {
-                        let raft_client = item.lock().await;
-                        let post_data = raft_client.post_data(msg);
-                        drop(raft_client); // Release the lock immediately
-                        post_data.await;
-                    });
+                    let raft_client = client.lock().await;
+                    raft_client.post_data(msg).await;
                 }
             });
         });
