@@ -1,3 +1,7 @@
+//! Raft segment implementation
+//! This module provides a file-based segment implementation for storing Raft entries.
+//! Each segment contains a range of entries and maintains an index of their positions.
+
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
@@ -7,22 +11,27 @@ use std::path::Path;
 const HEADER_SIZE: u64 = 16; // 8 bytes for start_index + 8 bytes for end_index
 const ENTRY_HEADER_SIZE: u64 = 8; // 8 bytes for entry size
 
+/// Represents a segment of Raft entries stored in a file
+/// Each segment contains a range of entries and maintains their positions
 #[derive(Debug)]
 pub struct Segment {
-    file: File,
-    start_index: u64,
-    end_index: u64,
-    path: String,
-    entry_positions: BTreeMap<u64, u64>, // index -> file position
+    file: File,                          // The underlying file
+    start_index: u64,                    // The index of the first entry in this segment
+    end_index: u64,                      // The index of the last entry in this segment
+    path: String,                        // Path to the segment file
+    entry_positions: BTreeMap<u64, u64>, // Maps entry index to its position in the file
 }
 
+/// Header information stored at the beginning of each segment file
 #[derive(Debug, Serialize, Deserialize)]
 struct SegmentHeader {
-    start_index: u64,
-    end_index: u64,
+    start_index: u64, // The index of the first entry in this segment
+    end_index: u64,   // The index of the last entry in this segment
 }
 
 impl Segment {
+    /// Create a new segment or open an existing one
+    /// Initializes the segment file and reads its header if it exists
     pub fn new<P: AsRef<Path>>(path: P, start_index: u64) -> io::Result<Self> {
         let file = OpenOptions::new()
             .read(true)
@@ -50,6 +59,7 @@ impl Segment {
         Ok(segment)
     }
 
+    /// Write the segment header to the file
     fn write_header(&mut self) -> io::Result<()> {
         let header = SegmentHeader {
             start_index: self.start_index,
@@ -63,6 +73,7 @@ impl Segment {
         Ok(())
     }
 
+    /// Read the segment header from the file
     fn read_header(&mut self) -> io::Result<()> {
         self.file.seek(SeekFrom::Start(0))?;
         let mut header_bytes = vec![0u8; HEADER_SIZE as usize];
@@ -76,18 +87,21 @@ impl Segment {
         Ok(())
     }
 
+    /// Write an entry header containing its size
     fn write_entry_header(&mut self, size: u64) -> io::Result<()> {
         let size_bytes = size.to_le_bytes();
         self.file.write_all(&size_bytes)?;
         Ok(())
     }
 
+    /// Read an entry header to get its size
     fn read_entry_header(&mut self) -> io::Result<u64> {
         let mut size_bytes = [0u8; 8];
         self.file.read_exact(&mut size_bytes)?;
         Ok(u64::from_le_bytes(size_bytes))
     }
 
+    /// Rebuild the entry position index by scanning the file
     fn rebuild_entry_positions(&mut self) -> io::Result<()> {
         self.entry_positions.clear();
         let mut pos = HEADER_SIZE;
@@ -103,6 +117,7 @@ impl Segment {
         Ok(())
     }
 
+    /// Append new entries to the segment
     pub fn append(&mut self, entries: &Vec<Vec<u8>>) -> io::Result<()> {
         self.file.seek(SeekFrom::End(0))?;
 
@@ -123,6 +138,7 @@ impl Segment {
         Ok(())
     }
 
+    /// Read an entry at the specified index
     pub fn read_entry(&mut self, index: u64) -> io::Result<Vec<u8>> {
         if index < self.start_index || index > self.end_index {
             return Err(io::Error::new(
@@ -143,20 +159,24 @@ impl Segment {
         Ok(entry)
     }
 
+    /// Clear the segment by removing its file
     pub fn clear(&mut self) -> io::Result<()> {
         std::fs::remove_file(&self.path)?;
         Ok(())
     }
 
+    /// Get the start index of this segment
     #[allow(unused)]
     pub fn get_start_index(&self) -> u64 {
         self.start_index
     }
 
+    /// Get the end index of this segment
     pub fn get_end_index(&self) -> u64 {
         self.end_index
     }
 
+    /// Check if the segment is empty
     #[allow(unused)]
     pub fn is_empty(&self) -> bool {
         self.end_index <= self.start_index

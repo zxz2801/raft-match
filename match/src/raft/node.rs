@@ -1,3 +1,7 @@
+//! Raft node implementation
+//! This module contains the core Raft node implementation, including leader and follower nodes,
+//! message handling, and state management.
+
 #![allow(clippy::field_reassign_with_default)]
 
 use std::collections::VecDeque;
@@ -16,15 +20,17 @@ use slog::o;
 use super::storage::FileStorage;
 
 // Constants
-const TICK_INTERVAL: Duration = Duration::from_millis(100);
-const LOGGER_CHANNEL_SIZE: usize = 4096;
-const SAVE_SNAPSHOT_INTERVAL: Duration = Duration::from_secs(600);
+const TICK_INTERVAL: Duration = Duration::from_millis(100); // Interval for raft tick
+const LOGGER_CHANNEL_SIZE: usize = 4096; // Size of logger channel buffer
+const SAVE_SNAPSHOT_INTERVAL: Duration = Duration::from_secs(600); // Interval for saving snapshots
 /// Default Raft configuration
-fn default_config(id: u64) -> Config {
+/// Creates a new Raft configuration with default values
+fn default_config(id: u64, applied: u64) -> Config {
     Config {
         id,
-        election_tick: 10,
-        heartbeat_tick: 3,
+        election_tick: 10, // Number of ticks before starting election
+        heartbeat_tick: 3, // Number of ticks between heartbeats
+        applied,
         ..Default::default()
     }
 }
@@ -39,6 +45,7 @@ fn is_initial_msg(msg: &Message) -> bool {
 }
 
 /// Add all followers to the cluster
+/// This function adds multiple followers to the Raft cluster through configuration changes
 pub async fn add_all_followers(ids: Vec<u64>, proposals: &Sender<Proposal>) {
     for id in ids {
         let mut conf_change = ConfChange::default();
@@ -58,17 +65,19 @@ pub async fn add_all_followers(ids: Vec<u64>, proposals: &Sender<Proposal>) {
 }
 
 /// Raft node implementation
+/// This struct represents a Raft node with its associated state and components
 pub struct Node<S: StateMachine> {
-    raft_group: RawNode<FileStorage>,
-    out_mailbox: Sender<Message>,
-    my_mailbox: Receiver<Message>,
-    state_machine: S,
-    proposals: Receiver<Proposal>,
-    proposed: VecDeque<Proposal>,
+    raft_group: RawNode<FileStorage>, // The core Raft node implementation
+    out_mailbox: Sender<Message>,     // Channel for sending messages to other nodes
+    my_mailbox: Receiver<Message>,    // Channel for receiving messages from other nodes
+    state_machine: S,                 // The state machine that applies committed entries
+    proposals: Receiver<Proposal>,    // Channel for receiving proposals
+    proposed: VecDeque<Proposal>,     // Queue of pending proposals
 }
 
 impl<S: StateMachine + Send + Clone + 'static> Node<S> {
     /// Create a new raft leader node
+    /// Initializes a new Raft node with leader configuration
     fn create_raft_leader(
         id: u64,
         out_mailbox: Sender<Message>,
@@ -78,9 +87,9 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
         state_machine: S,
         base_path: &str,
     ) -> Self {
-        let cfg = default_config(id);
         let logger = logger.new(o!("tag" => format!("peer_{}", id)));
         let storage = FileStorage::new(base_path, true).unwrap();
+        let cfg = default_config(id, storage.commit());
         let raft_group = RawNode::new(&cfg, storage, &logger).unwrap();
 
         Node {
@@ -94,6 +103,7 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
     }
 
     /// Create a new raft follower node
+    /// Initializes a new Raft node with follower configuration
     fn create_raft_follower(
         id: u64,
         out_mailbox: Sender<Message>,
@@ -103,9 +113,9 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
         state_machine: S,
         base_path: &str,
     ) -> Self {
-        let cfg = default_config(id);
         let logger = logger.new(o!("tag" => format!("peer_{}", id)));
         let storage = FileStorage::new(base_path, false).unwrap();
+        let cfg = default_config(id, storage.commit());
         let raft_group = RawNode::new(&cfg, storage, &logger).unwrap();
 
         Node {
@@ -119,6 +129,7 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
     }
 
     /// Process committed entries
+    /// Applies committed entries to the state machine and handles configuration changes
     fn handle_committed_entries(
         raft_group: &mut RawNode<FileStorage>,
         entries: Vec<Entry>,
@@ -148,6 +159,8 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
     }
 
     /// Process raft ready state
+    /// Handles the ready state of the Raft node, including message processing,
+    /// snapshot handling, and state persistence
     fn on_ready(&mut self) {
         let raft_group = &mut self.raft_group;
 
@@ -196,6 +209,8 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
         raft_group.advance_apply();
     }
 
+    /// Notify proposals about their status
+    /// Updates the status of pending proposals based on the last applied index
     fn notice_proposed(last_index: u64, proposed: &mut VecDeque<Proposal>) {
         let mut i = 0;
         while i < proposed.len() {
@@ -209,6 +224,7 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
     }
 
     /// Handle raft messages
+    /// Sends messages to other nodes in the cluster
     fn handle_out_messages(sender: &Sender<Message>, messages: &[Message]) {
         if !messages.is_empty() {
             for msg in messages {
@@ -220,6 +236,7 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
     }
 
     /// Handle snapshot
+    /// Applies a snapshot to the state machine and updates the storage
     fn handle_snapshot(
         raft_group: &mut RawNode<FileStorage>,
         ready: &Ready,
@@ -239,6 +256,8 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
         state_machine.on_snapshot(metadata.index, metadata.term, ready.snapshot().get_data());
     }
 
+    /// Handle save snapshot
+    /// Creates and saves a snapshot of the current state
     fn handle_save_snapshot(raft_group: &mut RawNode<FileStorage>, state_machine: &mut S) {
         let biz_data = state_machine.snapshot();
         let applied = raft_group.raft.raft_log.applied();
@@ -248,6 +267,7 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
     }
 
     /// Persist raft state to storage
+    /// Saves the current Raft state to persistent storage
     fn persist_raft_state(raft_group: &mut RawNode<FileStorage>, ready: &Ready) {
         let store = &mut raft_group.raft.raft_log.store;
 
@@ -267,12 +287,14 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
     }
 
     /// Update commit
+    /// Updates the commit index in the storage
     fn update_commit(raft_group: &mut RawNode<FileStorage>, commit: u64) {
         let store = &mut raft_group.raft.raft_log.store;
         store.set_commit(commit);
     }
 
     /// Run background tasks for the raft node
+    /// Main event loop that handles messages, proposals, and periodic tasks
     async fn run_background_tasks(&mut self) {
         let mut last_tick = Instant::now();
         let mut last_save_snapshot = Instant::now();
@@ -320,6 +342,7 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
     }
 
     /// Start a new raft node
+    /// Initializes and starts a new Raft node with the specified configuration
     pub fn start_raft(
         with_leader: bool,
         id: u64,
@@ -355,6 +378,7 @@ impl<S: StateMachine + Send + Clone + 'static> Node<S> {
     }
 
     /// Propose a new entry to the raft group
+    /// Submits a new proposal to the Raft group if this node is the leader
     fn propose(
         raft_group: &mut RawNode<FileStorage>,
         mut proposal: Proposal,
