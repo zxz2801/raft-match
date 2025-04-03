@@ -1,3 +1,7 @@
+//! Main entry point for the Raft match service
+//!
+//! This module initializes the service, handles configuration, and manages the server lifecycle.
+
 mod config;
 mod engine;
 mod match_service;
@@ -11,6 +15,10 @@ mod state_match;
 use clap::Parser;
 use tokio::signal;
 
+/// Handles graceful shutdown signals
+///
+/// This function listens for Ctrl+C and SIGTERM signals on Unix systems,
+/// allowing the service to shut down gracefully.
 async fn shutdown_signal() {
     let ctrl_c = async {
         signal::ctrl_c()
@@ -35,15 +43,27 @@ async fn shutdown_signal() {
     }
 }
 
+/// Command line arguments for the service
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
+    /// Path to the configuration file
     #[arg(short = 'c', long = "config", default_value_t = String::from("./config/config.toml"))]
     config: String,
+    /// Whether to run in staging mode
     #[arg(short = 's', long = "stage", default_value_t = false)]
     stage: bool,
 }
 
+/// Main entry point of the application
+///
+/// This function:
+/// 1. Initializes logging
+/// 2. Parses command line arguments
+/// 3. Loads configuration
+/// 4. Starts the server
+/// 5. Waits for shutdown signal
+/// 6. Stops the server gracefully
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::try_init().unwrap_or_default();

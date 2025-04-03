@@ -8,14 +8,14 @@ enum ResultCode {
 }
 
 message PostDataRequest {
-    repeated bytes data = 1;
+    bytes data = 1;
 }
 
 message PostDataResponse {
-    repeated ResultCode ret = 1;
+    ResultCode ret = 1;
 }
 
 
 service RaftService {
-    rpc PostData(PostDataRequest) returns (PostDataResponse) {}
+    rpc PostData(stream PostDataRequest) returns (PostDataResponse) {}
 }

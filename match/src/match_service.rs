@@ -1,3 +1,7 @@
+//! Match service implementation
+//!
+//! This module implements the gRPC service for order matching operations.
+
 use std::str::FromStr;
 
 use pb::match_service_server::MatchService;
@@ -14,16 +18,27 @@ use crate::engine::matchengine::MatchCmd;
 use crate::raft::proposal::Proposal;
 use crate::server;
 
+/// Protocol buffer definitions for match service
 #[allow(clippy::module_inception)]
 pub mod pb {
     tonic::include_proto!("r#match");
 }
 
+/// Match service implementation
 #[derive(Debug, Default)]
 pub struct MatchServiceSVC {}
 
 #[tonic::async_trait]
 impl MatchService for MatchServiceSVC {
+    /// Queries an order's status
+    ///
+    /// # Arguments
+    ///
+    /// * `_request` - Query order request
+    ///
+    /// # Returns
+    ///
+    /// Returns the order status or an error
     async fn query_order(
         &self,
         _request: tonic::Request<QueryOrderRequest>,
@@ -31,6 +46,21 @@ impl MatchService for MatchServiceSVC {
         todo!()
     }
 
+    /// Places a new order
+    ///
+    /// This method:
+    /// 1. Converts the request to a match engine order
+    /// 2. Creates a match command
+    /// 3. Proposes the command through Raft
+    /// 4. Waits for consensus
+    ///
+    /// # Arguments
+    ///
+    /// * `request` - Place order request
+    ///
+    /// # Returns
+    ///
+    /// Returns a response indicating success or failure
     async fn place_order(
         &self,
         request: tonic::Request<PlaceOrderRequest>,
@@ -83,6 +113,20 @@ impl MatchService for MatchServiceSVC {
         }))
     }
 
+    /// Cancels an existing order
+    ///
+    /// This method:
+    /// 1. Creates a cancel order command
+    /// 2. Proposes the command through Raft
+    /// 3. Waits for consensus
+    ///
+    /// # Arguments
+    ///
+    /// * `request` - Cancel order request
+    ///
+    /// # Returns
+    ///
+    /// Returns a response indicating success or failure
     async fn cancel_order(
         &self,
         request: tonic::Request<CancelOrderRequest>,
@@ -112,6 +156,21 @@ impl MatchService for MatchServiceSVC {
         }))
     }
 
+    /// Creates a new trading symbol
+    ///
+    /// This method:
+    /// 1. Validates symbol parameters
+    /// 2. Creates a new symbol
+    /// 3. Proposes the creation through Raft
+    /// 4. Waits for consensus
+    ///
+    /// # Arguments
+    ///
+    /// * `request` - Create symbol request
+    ///
+    /// # Returns
+    ///
+    /// Returns a response indicating success or failure
     async fn create_symbol(
         &self,
         request: tonic::Request<CreateSymbolRequest>,
@@ -153,6 +212,21 @@ impl MatchService for MatchServiceSVC {
         }))
     }
 
+    /// Removes a trading symbol
+    ///
+    /// This method:
+    /// 1. Validates symbol parameters
+    /// 2. Creates a remove symbol command
+    /// 3. Proposes the removal through Raft
+    /// 4. Waits for consensus
+    ///
+    /// # Arguments
+    ///
+    /// * `request` - Remove symbol request
+    ///
+    /// # Returns
+    ///
+    /// Returns a response indicating success or failure
     async fn remove_symbol(
         &self,
         request: tonic::Request<RemoveSymbolRequest>,

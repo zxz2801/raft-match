@@ -1,3 +1,7 @@
+//! Raft storage implementation
+//! This module provides a file-based storage implementation for Raft, supporting
+//! persistent storage of Raft entries, snapshots, and state.
+
 use crate::raft::segment::Segment;
 use prost::bytes::Bytes;
 use protobuf::Message;
@@ -10,13 +14,17 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// File-based storage implementation for Raft
+/// Combines in-memory storage with persistent file storage
 pub struct FileStorage {
-    mem_storage: MemStorage,
-    segments: BTreeMap<u64, Segment>,
-    base_path: PathBuf,
+    mem_storage: MemStorage,          // In-memory storage for quick access
+    segments: BTreeMap<u64, Segment>, // File segments for persistent storage
+    base_path: PathBuf,               // Base directory for storing files
 }
 
 impl FileStorage {
+    /// Create a new FileStorage instance
+    /// Initializes storage from existing files or creates new storage if bootstrap is true
     pub fn new<P: AsRef<Path>>(base_path: P, bootstrap: bool) -> Result<Self> {
         let base_path = base_path.as_ref().to_path_buf();
         fs::create_dir_all(&base_path)?;
@@ -128,10 +136,12 @@ impl FileStorage {
         })
     }
 
+    /// Get the path for a segment file
     fn get_segment_path(&self, start_index: u64) -> PathBuf {
         self.base_path.join(format!("segment_{}.log", start_index))
     }
 
+    /// Get an existing segment or create a new one
     fn get_or_create_segment(&mut self, start_index: u64) -> Result<&mut Segment> {
         if !self.segments.contains_key(&start_index) {
             let path = self.get_segment_path(start_index);
@@ -142,6 +152,8 @@ impl FileStorage {
         Ok(self.segments.get_mut(&start_index).unwrap())
     }
 
+    /// Append entries to storage
+    /// Writes entries to both memory and persistent storage
     pub fn append_entries(&mut self, entries: &[Entry]) -> Result<()> {
         // First append to mem_storage
         self.mem_storage.wl().append(entries)?;
@@ -168,18 +180,23 @@ impl FileStorage {
         Ok(())
     }
 
+    /// Set the configuration state
     pub fn set_conf_state(&mut self, conf_state: ConfState) {
         self.mem_storage.wl().set_conf_state(conf_state)
     }
 
+    /// Set the hard state
     pub fn set_hardstate(&mut self, hs: HardState) {
         self.mem_storage.wl().set_hardstate(hs);
     }
 
+    /// Set the commit index
     pub fn set_commit(&mut self, commit: u64) {
         self.mem_storage.wl().mut_hard_state().set_commit(commit);
     }
 
+    /// Apply a snapshot to storage
+    /// Writes the snapshot to disk and updates memory state
     pub fn apply_snapshot(&mut self, snapshot: &Snapshot) -> Result<()> {
         let snapshot_path = self
             .base_path
@@ -194,6 +211,8 @@ impl FileStorage {
         Ok(())
     }
 
+    /// Save a snapshot of the current state
+    /// Creates a new snapshot with the given business data and applied index
     pub fn save_snapshot(&mut self, biz_data: Vec<u8>, applied: u64) -> Result<()> {
         let mut snapshot = self.snapshot(applied, 0)?;
         snapshot.set_data(Bytes::from(biz_data));
@@ -234,15 +253,20 @@ impl FileStorage {
         }
         Ok(())
     }
+
+    /// Get the current commit index
+    pub fn commit(&self) -> u64 {
+        self.mem_storage.rl().hard_state().commit
+    }
 }
 
 impl Storage for FileStorage {
-    /// Implements the Storage trait.
+    /// Get the initial Raft state
     fn initial_state(&self) -> Result<RaftState> {
         self.mem_storage.initial_state()
     }
 
-    /// Implements the Storage trait.
+    /// Get entries from storage
     fn entries(
         &self,
         low: u64,
@@ -253,22 +277,22 @@ impl Storage for FileStorage {
         self.mem_storage.entries(low, high, max_size, context)
     }
 
-    /// Implements the Storage trait.
+    /// Get the term for a given index
     fn term(&self, idx: u64) -> Result<u64> {
         self.mem_storage.term(idx)
     }
 
-    /// Implements the Storage trait.
+    /// Get the first index in storage
     fn first_index(&self) -> Result<u64> {
         self.mem_storage.first_index()
     }
 
-    /// Implements the Storage trait.
+    /// Get the last index in storage
     fn last_index(&self) -> Result<u64> {
         self.mem_storage.last_index()
     }
 
-    /// Implements the Storage trait.
+    /// Create a snapshot at the given index
     fn snapshot(&self, request_index: u64, to: u64) -> Result<Snapshot> {
         self.mem_storage.snapshot(request_index, to)
     }
