@@ -37,10 +37,6 @@ impl MatchService for MatchServiceSVC {
     ) -> Result<tonic::Response<PlaceOrderResponse>, tonic::Status> {
         log::info!("place order {:?}", request.get_ref());
         if let Some(order) = &request.get_ref().order {
-            let price = Decimal::from_str(&order.price)
-                .map_err(|_| tonic::Status::invalid_argument("invalid price"))?;
-            let quantity = Decimal::from_str(&order.quantity)
-                .map_err(|_| tonic::Status::invalid_argument("invalid quantity"))?;
             let order_side = match order.order_side() {
                 crate::match_service::pb::OrderSide::Buy => crate::engine::entry::OrderSide::Buy,
                 crate::match_service::pb::OrderSide::Sell => crate::engine::entry::OrderSide::Sell,
@@ -61,8 +57,8 @@ impl MatchService for MatchServiceSVC {
                 order.symbol.clone(),
                 order_type,
                 order_side,
-                price,
-                quantity,
+                order.price.clone(),
+                order.quantity.clone(),
             );
             let cmd = MatchCmd {
                 cmd: crate::engine::matchengine::MatchCmdType::PlaceOrder,
@@ -71,9 +67,13 @@ impl MatchService for MatchServiceSVC {
             };
             let data =
                 bincode::serialize(&cmd).map_err(|_| tonic::Status::internal("serialize error"))?;
-            let (proposal, rx) = Proposal::normal(data);
-            server::instance().lock().await.add_proposal(proposal).await;
-            rx.recv()
+            let (proposal, rx) = Proposal::normal(data.clone());
+            {
+                let mut server = server::instance().lock().await;
+                server.add_proposal(proposal).await;
+            }
+            let _ = rx
+                .await
                 .map_err(|_| tonic::Status::internal("raft error"))?;
         };
 
@@ -104,7 +104,7 @@ impl MatchService for MatchServiceSVC {
             bincode::serialize(&cmd).map_err(|_| tonic::Status::internal("serialize error"))?;
         let (proposal, rx) = Proposal::normal(data);
         server::instance().lock().await.add_proposal(proposal).await;
-        rx.recv()
+        rx.await
             .map_err(|_| tonic::Status::internal("raft error"))?;
         Ok(tonic::Response::new(CancelOrderResponse {
             ret: 0,
@@ -145,8 +145,8 @@ impl MatchService for MatchServiceSVC {
             bincode::serialize(&cmd).map_err(|_| tonic::Status::internal("serialize error"))?;
         let (proposal, rx) = Proposal::normal(data);
         server::instance().lock().await.add_proposal(proposal).await;
-        rx.recv()
-            .map_err(|_| tonic::Status::internal("raft error"))?;
+        rx.await
+            .map_err(|e| tonic::Status::internal(format!("raft error: {:?}", e)))?;
         Ok(tonic::Response::new(CreateSymbolResponse {
             ret: 0,
             message: "ok".to_string(),
@@ -186,7 +186,7 @@ impl MatchService for MatchServiceSVC {
             bincode::serialize(&cmd).map_err(|_| tonic::Status::internal("serialize error"))?;
         let (proposal, rx) = Proposal::normal(data);
         server::instance().lock().await.add_proposal(proposal).await;
-        rx.recv()
+        rx.await
             .map_err(|_| tonic::Status::internal("raft error"))?;
         Ok(tonic::Response::new(RemoveSymbolResponse {
             ret: 0,

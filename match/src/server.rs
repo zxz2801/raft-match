@@ -9,14 +9,13 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response};
 use prometheus::{Encoder, TextEncoder};
 use raft::eraftpb::Message;
-use std::collections::VecDeque;
 use std::sync::Arc;
 
 use crate::raft::proposal::Proposal;
 use crate::raft_client;
 use once_cell::sync::OnceCell;
-use std::sync::mpsc;
-use std::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc;
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::Mutex;
 
 static INSTANCE: OnceCell<Mutex<Server>> = OnceCell::new();
@@ -25,31 +24,32 @@ pub fn instance() -> &'static Mutex<Server> {
 }
 
 pub struct Server {
-    pub(crate) in_mailbox: Sender<Message>, // <- other node
-    pub(crate) proposals: Arc<std::sync::Mutex<VecDeque<Proposal>>>, // proposals
+    pub(crate) in_mailbox: Sender<Message>,    // <- other node
+    pub(crate) tx_proposals: Sender<Proposal>, // proposals
 }
 
 impl Server {
     fn builder() -> Self {
-        let proposals: Arc<std::sync::Mutex<VecDeque<Proposal>>> =
-            Arc::new(std::sync::Mutex::new(VecDeque::new()));
+        // let proposals: Arc<Mutex<VecDeque<Proposal>>> =
+        //     Arc::new(Mutex::new(VecDeque::new()));
+        let (tx_proposals, rx_proposals) = mpsc::channel(1000);
         let state_match = state_match::StateMatch::new();
         let id = config::instance().lock().unwrap().id;
         let start_with_leader = config::instance().lock().unwrap().start_with_leader;
         let base_path = config::instance().lock().unwrap().base_path.clone();
-        let (in_mailbox, rx) = mpsc::channel();
+        let (in_mailbox, rx) = mpsc::channel(10000);
         let out_mailbox = crate::raft::node::Node::start_raft(
             start_with_leader,
             id,
             rx,
-            proposals.clone(),
+            rx_proposals,
             state_match,
             &base_path,
         );
         Self::start_run_out_message(out_mailbox);
         Server {
             in_mailbox,
-            proposals,
+            tx_proposals,
         }
     }
 
@@ -59,7 +59,7 @@ impl Server {
         self.init_logger().await;
         self.start_grpc_server().await;
         self.start_metrics_server().await;
-        self.test_data().await;
+        self.init_followers().await;
     }
 
     pub fn stop(&mut self) {
@@ -67,7 +67,7 @@ impl Server {
     }
 
     pub async fn add_proposal(&mut self, proposal: Proposal) {
-        self.proposals.lock().unwrap().push_back(proposal);
+        let _ = self.tx_proposals.send(proposal).await;
     }
     async fn start_grpc_server(&mut self) {
         let addr = config::instance()
@@ -122,25 +122,20 @@ impl Server {
         log::info!("metrics server started on {}", addr);
     }
 
-    fn start_run_out_message(out_mailbox: Receiver<Message>) {
+    fn start_run_out_message(mut out_mailbox: Receiver<Message>) {
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
                 let client = Arc::new(Mutex::new(raft_client::RaftClient::builder()));
-                while let Ok(msg) = out_mailbox.recv() {
-                    let item = client.clone();
-                    tokio::spawn(async move {
-                        let raft_client = item.lock().await;
-                        let post_data = raft_client.post_data(msg);
-                        drop(raft_client); // Release the lock immediately
-                        post_data.await;
-                    });
+                while let Some(msg) = out_mailbox.recv().await {
+                    let raft_client = client.lock().await;
+                    raft_client.post_data(msg).await;
                 }
             });
         });
     }
 
-    async fn test_data(&self) {
+    async fn init_followers(&self) {
         let is_leader = config::instance().lock().unwrap().start_with_leader;
         if !is_leader {
             return;
@@ -156,17 +151,11 @@ impl Server {
             .collect();
         let ids = ids.iter().filter(|i| **i != self_id).cloned().collect();
 
-        let proposals = self.proposals.clone();
+        let proposals = self.tx_proposals.clone();
         tokio::spawn(async move {
-            crate::raft::node::add_all_followers(ids, &proposals);
-            let mut counter = 0;
-            loop {
-                let (proposal, _rx) = Proposal::normal(counter.to_string().into_bytes());
-                proposals.lock().unwrap().push_back(proposal);
-                log::info!("Added test proposal: {}", counter);
-                counter += 1;
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            }
+            // wait node init
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            crate::raft::node::add_all_followers(ids, &proposals).await;
         });
     }
 }

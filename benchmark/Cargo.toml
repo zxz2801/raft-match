@@ -1,5 +1,5 @@
 [package]
-name = "match"
+name = "benchmark"
 version = "0.1.0"
 edition = "2021"
 
@@ -29,6 +29,7 @@ secp256k1 = "0.29"
 hex = "0.4.3"
 digest = "0.10"  
 sha3 = { version = "0.10"}
+# ethers = "2.0.14"
 prometheus = "0.13"
 hyper = { version = "^0.14", features = ["server", "http1", "tcp"] }
 
@@ -52,10 +53,13 @@ raft-proto = { git = "https://github.com/zxz2801/raft-rs.git", branch = "master"
 
 rust_decimal = { version = "1.30", features = ["serde"] }
 rust_decimal_macros = "1.30"
-tokio-stream = "0.1.17"
+
+hdrhistogram = "7.5"
 
 [build-dependencies]
 tonic-build = "0.8.0"
 
 [features]
 default = ["slog-term"]
+
+

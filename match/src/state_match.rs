@@ -15,8 +15,8 @@ impl StateMatch {
 }
 
 impl StateMachine for StateMatch {
-    fn apply(&mut self, _index: u64, data: &[u8]) {
-        self.match_engine.on_message(data);
+    fn apply(&mut self, index: u64, data: &[u8]) {
+        self.match_engine.on_message(index, data);
     }
     fn snapshot(&self) -> Vec<u8> {
         self.match_engine.snapshot()
