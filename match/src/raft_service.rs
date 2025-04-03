@@ -21,7 +21,13 @@ impl RaftService for RaftServiceSVC {
         let mut response: PostDataResponse = PostDataResponse::default();
         for data in request.into_inner().data {
             match RaftMessage::parse_from_bytes(data.as_slice()) {
-                Ok(message) => match server::instance().lock().await.in_mailbox.send(message) {
+                Ok(message) => match server::instance()
+                    .lock()
+                    .await
+                    .in_mailbox
+                    .send(message)
+                    .await
+                {
                     Ok(_) => {
                         response.push_ret(ResultCode::Ok);
                     }

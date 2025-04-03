@@ -1,6 +1,6 @@
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Symbol {
@@ -9,13 +9,17 @@ pub struct Symbol {
     pub quote_currency: String,
     pub price_precision: i32,
     pub quantity_precision: i32,
+    #[serde(skip_serializing, skip_deserializing)]
     pub min_price: Decimal,
+    #[serde(skip_serializing, skip_deserializing)]
     pub max_price: Decimal,
+    #[serde(skip_serializing, skip_deserializing)]
     pub min_quantity: Decimal,
+    #[serde(skip_serializing, skip_deserializing)]
     pub max_quantity: Decimal,
     pub status: SymbolStatus,
-    pub created_at: SystemTime,
-    pub updated_at: SystemTime,
+    pub created_at: u64,
+    pub updated_at: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,7 +43,10 @@ impl Symbol {
         min_quantity: Decimal,
         max_quantity: Decimal,
     ) -> Self {
-        let now = SystemTime::now();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         Self {
             name,
             base_currency,
