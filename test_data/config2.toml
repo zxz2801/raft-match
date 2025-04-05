@@ -1,0 +1,16 @@
+id = 2
+start_with_leader = false
+addr = "0.0.0.0:4002"
+metrics_addr = "0.0.0.0:4012"
+base_path = "./data2"
+[[node_list]]
+id = 1
+addr = "grpc://127.0.0.1:4001"
+
+[[node_list]]
+id = 2
+addr = "grpc://127.0.0.1:4002"
+
+[[node_list]]
+id = 3
+addr = "grpc://127.0.0.1:4003"

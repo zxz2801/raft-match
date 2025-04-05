@@ -162,7 +162,7 @@ impl FileStorage {
         let mut entries_by_segment: BTreeMap<u64, Vec<Vec<u8>>> = BTreeMap::new();
 
         for entry in entries {
-            let segment_start = (entry.index / 1000000) * 1000000; // Each segment contains 1000 entries
+            let segment_start = (entry.index / 10000) * 10000; // Each segment contains 1000 entries
             entries_by_segment
                 .entry(segment_start)
                 .or_default()

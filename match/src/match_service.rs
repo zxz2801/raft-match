@@ -230,27 +230,9 @@ impl MatchService for MatchServiceSVC {
     async fn remove_symbol(
         &self,
         request: tonic::Request<RemoveSymbolRequest>,
-    ) -> Result<tonic::Response<RemoveSymbolResponse>, tonic::Status> {
-        let symbol = request.get_ref().symbol.as_ref().unwrap();
-        let min_quantity = Decimal::from_str(&symbol.min_quantity)
-            .map_err(|_| tonic::Status::invalid_argument("invalid min quantity"))?;
-        let max_quantity = Decimal::from_str(&symbol.max_quantity)
-            .map_err(|_| tonic::Status::invalid_argument("invalid max quantity"))?;
-        let min_amount = Decimal::from_str(&symbol.min_amount)
-            .map_err(|_| tonic::Status::invalid_argument("invalid min amount"))?;
-        let max_amount = Decimal::from_str(&symbol.max_amount)
-            .map_err(|_| tonic::Status::invalid_argument("invalid max amount"))?;
-        let match_symbol = Symbol::new(
-            symbol.symbol.clone(),
-            symbol.base.clone(),
-            symbol.quote.clone(),
-            symbol.price_precision,
-            symbol.quantity_precision,
-            min_quantity,
-            max_quantity,
-            min_amount,
-            max_amount,
-        );
+    ) -> Result<tonic::Response<RemoveSymbolResponse>, tonic::Status> {        
+        let mut match_symbol = Symbol::default();
+        match_symbol.name = request.get_ref().symbol.clone();
         let cmd = MatchCmd {
             cmd: crate::engine::matchengine::MatchCmdType::RemoveSymbol,
             order: None,

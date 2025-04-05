@@ -47,10 +47,10 @@ regex = "1.11.1"
 slog-async = "2.8.0"
 tempfile = "3.8.1"
 
-raft = { git = "https://github.com/zxz2801/raft-rs.git", branch = "master" }
-raft-proto = { git = "https://github.com/zxz2801/raft-rs.git", branch = "master" }
+raft = { git = "https://github.com/zxz2801/raft-rs.git", branch = "feat/raft_match" }
+raft-proto = { git = "https://github.com/zxz2801/raft-rs.git", branch = "feat/raft_match" }
 
-rust_decimal = { version = "1.30", features = ["serde"] }
+rust_decimal = { version = "1.30", features = ["serde-str"] }
 rust_decimal_macros = "1.30"
 tokio-stream = "0.1.17"
 
