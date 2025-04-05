@@ -85,7 +85,7 @@ message CreateSymbolResponse {
 }
 
 message RemoveSymbolRequest {
-    Symbol symbol = 1;
+    string symbol = 1;
 }
 
 message RemoveSymbolResponse {

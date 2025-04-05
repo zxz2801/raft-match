@@ -22,7 +22,7 @@ use super::storage::FileStorage;
 // Constants
 const TICK_INTERVAL: Duration = Duration::from_millis(100); // Interval for raft tick
 const LOGGER_CHANNEL_SIZE: usize = 4096; // Size of logger channel buffer
-const SAVE_SNAPSHOT_INTERVAL: Duration = Duration::from_secs(600); // Interval for saving snapshots
+const SAVE_SNAPSHOT_INTERVAL: Duration = Duration::from_secs(60); // Interval for saving snapshots
 /// Default Raft configuration
 /// Creates a new Raft configuration with default values
 fn default_config(id: u64, applied: u64) -> Config {
