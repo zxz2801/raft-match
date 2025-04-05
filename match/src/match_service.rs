@@ -230,9 +230,11 @@ impl MatchService for MatchServiceSVC {
     async fn remove_symbol(
         &self,
         request: tonic::Request<RemoveSymbolRequest>,
-    ) -> Result<tonic::Response<RemoveSymbolResponse>, tonic::Status> {        
-        let mut match_symbol = Symbol::default();
-        match_symbol.name = request.get_ref().symbol.clone();
+    ) -> Result<tonic::Response<RemoveSymbolResponse>, tonic::Status> {
+        let match_symbol = Symbol {
+            name: request.get_ref().symbol.clone(),
+            ..Default::default()
+        };
         let cmd = MatchCmd {
             cmd: crate::engine::matchengine::MatchCmdType::RemoveSymbol,
             order: None,

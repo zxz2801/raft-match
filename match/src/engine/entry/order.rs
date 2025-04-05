@@ -73,7 +73,7 @@ pub struct Order {
 #[allow(unused)]
 impl Order {
     /// Creates a new order with the specified parameters
-    /// 
+    ///
     /// # Arguments
     /// * `id` - Unique identifier for the order
     /// * `symbol` - Trading symbol
@@ -128,7 +128,7 @@ impl Order {
     }
 
     /// Calculates the remaining quantity to be filled
-    /// 
+    ///
     /// # Returns
     /// The difference between total quantity and filled quantity
     pub fn remaining_quantity(&self) -> Decimal {
@@ -136,7 +136,7 @@ impl Order {
     }
 
     /// Checks if the order has been completely filled
-    /// 
+    ///
     /// # Returns
     /// True if filled quantity is greater than or equal to total quantity
     pub fn is_filled(&self) -> bool {
@@ -144,7 +144,7 @@ impl Order {
     }
 
     /// Checks if the order can be canceled
-    /// 
+    ///
     /// # Returns
     /// True if the order is in New or PartiallyFilled state
     pub fn is_cancelable(&self) -> bool {

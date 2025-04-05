@@ -30,7 +30,7 @@ pub struct Trade {
 #[allow(unused)]
 impl Trade {
     /// Creates a new trade with the specified parameters
-    /// 
+    ///
     /// # Arguments
     /// * `id` - Unique identifier for the trade
     /// * `symbol` - Trading symbol
@@ -58,7 +58,7 @@ impl Trade {
     }
 
     /// Calculates the total amount of the trade
-    /// 
+    ///
     /// # Returns
     /// The product of price and quantity
     pub fn total_amount(&self) -> Decimal {

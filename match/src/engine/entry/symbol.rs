@@ -52,7 +52,7 @@ pub enum SymbolStatus {
 #[allow(unused)]
 impl Symbol {
     /// Creates a new trading symbol with the specified parameters
-    /// 
+    ///
     /// # Arguments
     /// * `name` - Name of the trading pair
     /// * `base_currency` - Base currency code
@@ -96,10 +96,10 @@ impl Symbol {
     }
 
     /// Validates if a price is within the allowed range
-    /// 
+    ///
     /// # Arguments
     /// * `price` - Price to validate
-    /// 
+    ///
     /// # Returns
     /// True if the price is within min_price and max_price
     pub fn validate_price(&self, price: Decimal) -> bool {
@@ -107,10 +107,10 @@ impl Symbol {
     }
 
     /// Validates if a quantity is within the allowed range
-    /// 
+    ///
     /// # Arguments
     /// * `quantity` - Quantity to validate
-    /// 
+    ///
     /// # Returns
     /// True if the quantity is within min_quantity and max_quantity
     pub fn validate_quantity(&self, quantity: Decimal) -> bool {
@@ -118,11 +118,11 @@ impl Symbol {
     }
 
     /// Rounds a value to the specified precision
-    /// 
+    ///
     /// # Arguments
     /// * `value` - Value to round
     /// * `precision` - Number of decimal places (can be negative for rounding to powers of 10)
-    /// 
+    ///
     /// # Returns
     /// Rounded value
     fn round_by_precision(value: Decimal, precision: i32) -> Decimal {
@@ -135,10 +135,10 @@ impl Symbol {
     }
 
     /// Rounds a price according to the symbol's price precision
-    /// 
+    ///
     /// # Arguments
     /// * `price` - Price to round
-    /// 
+    ///
     /// # Returns
     /// Rounded price
     pub fn round_price(&self, price: Decimal) -> Decimal {
@@ -146,10 +146,10 @@ impl Symbol {
     }
 
     /// Rounds a quantity according to the symbol's quantity precision
-    /// 
+    ///
     /// # Arguments
     /// * `quantity` - Quantity to round
-    /// 
+    ///
     /// # Returns
     /// Rounded quantity
     pub fn round_quantity(&self, quantity: Decimal) -> Decimal {

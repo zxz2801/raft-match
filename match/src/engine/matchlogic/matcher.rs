@@ -18,7 +18,7 @@ pub struct Matcher {
 
 impl Matcher {
     /// Creates a new matcher for a specific trading symbol
-    /// 
+    ///
     /// # Arguments
     /// * `symbol` - Name of the trading symbol
     pub fn new(symbol: String) -> Self {
@@ -28,10 +28,10 @@ impl Matcher {
     }
 
     /// Places a new order and attempts to match it with existing orders
-    /// 
+    ///
     /// # Arguments
     /// * `order` - The order to place and match
-    /// 
+    ///
     /// # Returns
     /// Vector of trades generated from matching this order
     pub fn place_order(&mut self, mut order: Order) -> Vec<Trade> {
@@ -54,10 +54,10 @@ impl Matcher {
     }
 
     /// Cancels an existing order
-    /// 
+    ///
     /// # Arguments
     /// * `order_id` - ID of the order to cancel
-    /// 
+    ///
     /// # Returns
     /// The canceled order if found, None otherwise
     pub fn cancel_order(&mut self, order_id: &str) -> Option<Order> {
@@ -66,10 +66,10 @@ impl Matcher {
 
     /// Matches a market order against the order book
     /// Market orders are executed at the best available price
-    /// 
+    ///
     /// # Arguments
     /// * `order` - The market order to match
-    /// 
+    ///
     /// # Returns
     /// Vector of trades generated from matching this order
     fn match_market_order(&mut self, order: &mut Order) -> Vec<Trade> {
@@ -141,10 +141,10 @@ impl Matcher {
 
     /// Matches a limit order against the order book
     /// Limit orders are only executed at their specified price or better
-    /// 
+    ///
     /// # Arguments
     /// * `order` - The limit order to match
-    /// 
+    ///
     /// # Returns
     /// Vector of trades generated from matching this order
     fn match_limit_order(&mut self, order: &mut Order) -> Vec<Trade> {

@@ -35,7 +35,7 @@ impl OrderBook {
     }
 
     /// Adds a new order to the order book
-    /// 
+    ///
     /// # Arguments
     /// * `order` - The order to add to the book
     pub fn add_order(&mut self, order: Order) {
@@ -48,10 +48,10 @@ impl OrderBook {
     }
 
     /// Removes an order from the order book by its ID
-    /// 
+    ///
     /// # Arguments
     /// * `order_id` - The ID of the order to remove
-    /// 
+    ///
     /// # Returns
     /// The removed order if found, None otherwise
     pub fn remove_order(&mut self, order_id: &str) -> Option<Order> {
@@ -77,10 +77,10 @@ impl OrderBook {
     }
 
     /// Retrieves an order by its ID
-    /// 
+    ///
     /// # Arguments
     /// * `order_id` - The ID of the order to retrieve
-    /// 
+    ///
     /// # Returns
     /// A reference to the order if found, None otherwise
     pub fn get_order(&self, order_id: &str) -> Option<&Order> {
@@ -88,7 +88,7 @@ impl OrderBook {
     }
 
     /// Gets the highest bid price in the order book
-    /// 
+    ///
     /// # Returns
     /// The best bid price if available, None if there are no bids
     pub fn get_best_bid(&self) -> Option<Decimal> {
@@ -96,7 +96,7 @@ impl OrderBook {
     }
 
     /// Gets the lowest ask price in the order book
-    /// 
+    ///
     /// # Returns
     /// The best ask price if available, None if there are no asks
     pub fn get_best_ask(&self) -> Option<Decimal> {
@@ -104,7 +104,7 @@ impl OrderBook {
     }
 
     /// Calculates the current spread between best ask and best bid
-    /// 
+    ///
     /// # Returns
     /// The spread (ask - bid) if both sides have orders, None otherwise
     pub fn get_spread(&self) -> Option<Decimal> {

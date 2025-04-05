@@ -57,7 +57,7 @@ impl MatchEngine {
     }
 
     /// Processes an incoming message/command
-    /// 
+    ///
     /// # Arguments
     /// * `index` - The new index/version number for this state update
     /// * `data` - Serialized command data to process
@@ -66,26 +66,24 @@ impl MatchEngine {
         self.index = index;
         let cmd: Result<MatchCmd, bincode::Error> = bincode::deserialize(data);
         match cmd {
-            Ok(cmd) => {
-                match cmd.cmd {
-                    MatchCmdType::PlaceOrder => {
-                        let _ = self.spot_processor.place_order(&cmd.order.unwrap());
-                    }
-                    MatchCmdType::CancelOrder => {
-                        let symbol = cmd.order.as_ref().unwrap().symbol.clone();
-                        let order_id = cmd.order.as_ref().unwrap().id.clone();
-                        let _ = self.spot_processor.cancel_order(&symbol, &order_id);
-                    }
-                    MatchCmdType::CreateSymbol => {
-                        let _ = self.spot_processor.add_symbol(cmd.symbol.unwrap());
-                    }
-                    MatchCmdType::RemoveSymbol => {
-                        let symbol = cmd.symbol.as_ref().unwrap().name.clone();
-                        let _ = self.spot_processor.del_symbol(&symbol);
-                    }
-                    _ => {}
+            Ok(cmd) => match cmd.cmd {
+                MatchCmdType::PlaceOrder => {
+                    let _ = self.spot_processor.place_order(&cmd.order.unwrap());
                 }
-            }
+                MatchCmdType::CancelOrder => {
+                    let symbol = cmd.order.as_ref().unwrap().symbol.clone();
+                    let order_id = cmd.order.as_ref().unwrap().id.clone();
+                    let _ = self.spot_processor.cancel_order(&symbol, &order_id);
+                }
+                MatchCmdType::CreateSymbol => {
+                    let _ = self.spot_processor.add_symbol(cmd.symbol.unwrap());
+                }
+                MatchCmdType::RemoveSymbol => {
+                    let symbol = cmd.symbol.as_ref().unwrap().name.clone();
+                    let _ = self.spot_processor.del_symbol(&symbol);
+                }
+                _ => {}
+            },
             Err(e) => {
                 log::error!("failed to deserialize match cmd: {}", e);
             }
@@ -93,7 +91,7 @@ impl MatchEngine {
     }
 
     /// Restores engine state from a snapshot
-    /// 
+    ///
     /// # Arguments
     /// * `data` - Serialized engine state data
     pub fn on_snapshot(&mut self, data: &[u8]) {
@@ -106,7 +104,7 @@ impl MatchEngine {
     }
 
     /// Creates a snapshot of the current engine state
-    /// 
+    ///
     /// # Returns
     /// Serialized engine state as a byte vector
     pub fn snapshot(&self) -> Vec<u8> {

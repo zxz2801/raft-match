@@ -29,10 +29,10 @@ impl SymbolManager {
     }
 
     /// Adds a new trading symbol to the system
-    /// 
+    ///
     /// # Arguments
     /// * `symbol` - The symbol configuration to add
-    /// 
+    ///
     /// # Returns
     /// * `Ok(())` - If symbol was added successfully
     /// * `Err(String)` - If symbol already exists
@@ -48,10 +48,10 @@ impl SymbolManager {
     }
 
     /// Updates an existing symbol's configuration
-    /// 
+    ///
     /// # Arguments
     /// * `symbol` - The updated symbol configuration
-    /// 
+    ///
     /// # Returns
     /// * `Ok(())` - If symbol was updated successfully
     /// * `Err(String)` - If symbol does not exist
@@ -65,10 +65,10 @@ impl SymbolManager {
     }
 
     /// Retrieves a symbol's configuration
-    /// 
+    ///
     /// # Arguments
     /// * `name` - Name of the symbol to retrieve
-    /// 
+    ///
     /// # Returns
     /// Reference to the symbol if found, None otherwise
     pub fn get_symbol(&self, name: &str) -> Option<&Symbol> {
@@ -76,10 +76,10 @@ impl SymbolManager {
     }
 
     /// Retrieves a symbol's order matcher
-    /// 
+    ///
     /// # Arguments
     /// * `name` - Name of the symbol to retrieve matcher for
-    /// 
+    ///
     /// # Returns
     /// Mutable reference to the matcher if found, None otherwise
     pub fn get_matcher(&mut self, name: &str) -> Option<&mut Matcher> {
@@ -87,7 +87,7 @@ impl SymbolManager {
     }
 
     /// Lists all available trading symbols
-    /// 
+    ///
     /// # Returns
     /// Vector of references to all symbol configurations
     pub fn list_symbols(&self) -> Vec<&Symbol> {
@@ -95,10 +95,10 @@ impl SymbolManager {
     }
 
     /// Deactivates a symbol, preventing new orders but preserving existing ones
-    /// 
+    ///
     /// # Arguments
     /// * `name` - Name of the symbol to deactivate
-    /// 
+    ///
     /// # Returns
     /// * `Ok(())` - If symbol was deactivated successfully
     /// * `Err(String)` - If symbol does not exist
@@ -112,10 +112,10 @@ impl SymbolManager {
     }
 
     /// Delists a symbol, removing it from trading completely
-    /// 
+    ///
     /// # Arguments
     /// * `name` - Name of the symbol to delist
-    /// 
+    ///
     /// # Returns
     /// * `Ok(())` - If symbol was delisted successfully
     /// * `Err(String)` - If symbol does not exist
@@ -130,10 +130,10 @@ impl SymbolManager {
     }
 
     /// Retrieves both a symbol's configuration and its matcher
-    /// 
+    ///
     /// # Arguments
     /// * `name` - Name of the symbol
-    /// 
+    ///
     /// # Returns
     /// Tuple of references to the symbol and its matcher if found, None otherwise
     pub fn get_symbol_and_matcher(&mut self, name: &str) -> Option<(&Symbol, &mut Matcher)> {
