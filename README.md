@@ -45,45 +45,35 @@ The engine is organized into several key components:
 - **Processor**: External interface
   - `OrderProcessor`: Order processing and validation
 
-## Usage
+## Benchmark
 
-```rust
-use match_engine::engine::processor::OrderProcessor;
-use match_engine::engine::entry::{Symbol, OrderType, OrderSide};
-use rust_decimal_macros::dec;
+```test_data/benchmark.sh```
 
-// Create a new order processor
-let mut processor = OrderProcessor::new();
+### Test Environment
+- **Platform**: Mac M1
+- **Concurrent Clients**: 100
+- **Target Interval**: 1
 
-// Add a new trading pair
-let symbol = Symbol::new(
-    "BTC/USDT".to_string(),
-    "BTC".to_string(),
-    "USDT".to_string(),
-    2,  // price precision (2 decimal places)
-    8,  // quantity precision (8 decimal places)
-    dec!(10000),  // min price
-    dec!(100000), // max price
-    dec!(0.0001), // min quantity
-    dec!(100),    // max quantity
-);
-processor.add_symbol(symbol)?;
+### Performance Results
+| Metric | Value |
+|--------|-------|
+| Total Requests | 822,267 |
+| Average TPS | 27,408.90 |
 
-// Place a limit order
-let trades = processor.place_order(
-    "BTC/USDT",
-    OrderSide::Buy,
-    OrderType::Limit,
-    dec!(50000),
-    dec!(0.1),
-)?;
-```
+### Latency Distribution (μs)
+| Percentile | Latency |
+|------------|---------|
+| p50 | 1,703 |
+| p90 | 2,393 |
+| p95 | 2,773 |
+| p99 | 5,187 |
+| p99.9 | 7,815 |
 
 ## Dependencies
 
 - `rust_decimal`: Decimal number handling
 - `serde`: Serialization/deserialization
-- `uuid`: Unique identifier generation
+- `raft-rs`: Raft protocol 
 
 ## License
 
