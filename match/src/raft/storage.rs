@@ -214,7 +214,7 @@ impl FileStorage {
     /// Save a snapshot of the current state
     /// Creates a new snapshot with the given business data and applied index
     pub fn save_snapshot(&mut self, biz_data: Vec<u8>, applied: u64) -> Result<()> {
-        let mut snapshot = self.snapshot(applied, 0)?;
+        let mut snapshot = self.mem_storage.snapshot(applied, 0)?;
         snapshot.set_data(Bytes::from(biz_data));
         let snapshot_path = self.base_path.join("snapshot");
         let temp_path = self.base_path.join("snapshot.tmp");
@@ -294,6 +294,20 @@ impl Storage for FileStorage {
 
     /// Create a snapshot at the given index
     fn snapshot(&self, request_index: u64, to: u64) -> Result<Snapshot> {
+        // Read snapshot from disk
+        let snapshot_path = self.base_path.join("snapshot");
+        if snapshot_path.exists() {
+            let snapshot_data = fs::read(&snapshot_path)
+                .map_err(|e| raft::Error::Store(raft::StorageError::Other(Box::new(e))))?;
+            let mut snapshot = Snapshot::default();
+            snapshot
+                .merge_from_bytes(&snapshot_data)
+                .map_err(|e| raft::Error::Store(raft::StorageError::Other(Box::new(e))))?;
+            if snapshot.get_metadata().index < request_index {
+                snapshot.mut_metadata().index = request_index;
+            }
+            return Ok(snapshot);
+        }
         self.mem_storage.snapshot(request_index, to)
     }
 }
