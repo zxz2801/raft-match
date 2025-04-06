@@ -6,7 +6,10 @@ use tokio::sync::Mutex;
 use tokio::time::sleep;
 
 use pb::match_service_client::MatchServiceClient;
-use pb::{Order, OrderSide, OrderType, PlaceOrderRequest, TimeInForce};
+use pb::{
+    CreateSymbolRequest, Order, OrderSide, OrderType, PlaceOrderRequest, Symbol, SymbolStatus,
+    TimeInForce,
+};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -33,6 +36,34 @@ pub mod pb {
     tonic::include_proto!("r#match");
 }
 
+async fn create_symbol(server_addr: &str) {
+    let mut client = match MatchServiceClient::connect(server_addr.to_string()).await {
+        Ok(client) => client,
+        Err(e) => {
+            eprintln!("Failed to connect to server: {}", e);
+            return;
+        }
+    };
+    let request = tonic::Request::new(CreateSymbolRequest {
+        symbol: Some(Symbol {
+            symbol: "BTCUSDT".to_string(),
+            base: "BTC".to_string(),
+            quote: "USDT".to_string(),
+            min_quantity: "0.000001".to_string(),
+            max_quantity: "1000000".to_string(),
+            min_amount: "0.000001".to_string(),
+            max_amount: "1000000".to_string(),
+            price_precision: 5,
+            quantity_precision: 5,
+            status: SymbolStatus::Alive as i32,
+        }),
+    });
+    match client.create_symbol(request).await {
+        Ok(_) => println!("Symbol created"),
+        Err(e) => eprintln!("Failed to create symbol: {}", e),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
@@ -46,6 +77,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Starting benchmark with {} concurrent clients, target INTERVAL: {}",
         args.concurrency, args.interval
     );
+
+    create_symbol(&server_addr).await;
 
     // Spawn client tasks
     let mut handles = vec![];
@@ -76,7 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         time_in_force: TimeInForce::Gtc as i32,
                         quantity: "0.001".to_string(),
                         price: "50000.0".to_string(),
-                        order_id: rand::random::<u64>(),
+                        order_id: rand::random::<u64>() % 1000,
                         taker_fee: "0.0005".to_string(),
                         maker_fee: "0.0005".to_string(),
                     }),

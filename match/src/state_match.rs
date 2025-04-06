@@ -52,6 +52,8 @@ impl StateMachine for StateMatch {
     /// * `_last_term` - The last applied log term
     /// * `data` - The snapshot data to restore from
     fn on_snapshot(&mut self, _last_index: u64, _last_term: u64, data: &[u8]) {
-        self.match_engine.on_snapshot(data);
+        if !data.is_empty() {
+            self.match_engine.on_snapshot(data);
+        }
     }
 }

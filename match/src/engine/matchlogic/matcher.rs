@@ -37,6 +37,11 @@ impl Matcher {
     pub fn place_order(&mut self, mut order: Order) -> Vec<Trade> {
         let mut trades = Vec::new();
 
+        if self.orderbook.orders_by_id.contains_key(&order.id) {
+            log::warn!("Order {} already exists", order.id);
+            return trades;
+        }
+
         match order.order_type {
             OrderType::Market => {
                 trades.extend(self.match_market_order(&mut order));
